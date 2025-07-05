@@ -12,7 +12,9 @@ remappings = [
     '@openzeppelin/contracts/=lib/openzeppelin-contracts/contracts/',
     'solidity-bytes-utils/contracts/=lib/solidity-bytes-utils/contracts/',
     '@layerzerolabs/lz-evm-v1-0.7/contracts/=lib/layerzero-v1/contracts/',
-    '@uniswap/v3-periphery/contracts/=lib/v3-periphery/contracts/'
+    '@uniswap/v3-periphery/contracts/=lib/v3-periphery/contracts/',
+    '@uniswap/v3-core/contracts/=lib/v3-core/contracts/'
+
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options
