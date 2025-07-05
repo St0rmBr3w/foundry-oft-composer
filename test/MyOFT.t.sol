@@ -2,9 +2,9 @@
 pragma solidity ^0.8.20;
 
 // Mock imports
-import { OFTMock } from "../mocks/OFTMock.sol";
-import { ERC20Mock } from "../mocks/ERC20Mock.sol";
-import { OFTComposerMock } from "../mocks/OFTComposerMock.sol";
+import { OFTMock } from "./mocks/OFTMock.sol";
+import { ERC20Mock } from "./mocks/ERC20Mock.sol";
+import { OFTComposerMock } from "./mocks/OFTComposerMock.sol";
 
 // OApp imports
 import { IOAppOptionsType3, EnforcedOptionParam } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OAppOptionsType3.sol";
