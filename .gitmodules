@@ -16,3 +16,6 @@
 [submodule "lib/LayerZero-v1"]
 	path = lib/LayerZero-v1
 	url = https://github.com/LayerZero-Labs/LayerZero-v1
+[submodule "lib/v3-periphery"]
+	path = lib/v3-periphery
+	url = https://github.com/Uniswap/v3-periphery
