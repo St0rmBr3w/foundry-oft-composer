@@ -12,3 +12,12 @@ docs/
 
 # Dotenv file
 .env
+.env.*
+!env.example
+
+# Password files
+.password
+*.password
+
+# Deployment outputs (may contain sensitive info)
+deployments/

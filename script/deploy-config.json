@@ -1,0 +1,20 @@
+{
+  "tokenName": "My Omnichain Token",
+  "tokenSymbol": "MYOFT",
+  "chains": [
+    {
+      "name": "base",
+      "eid": 30184,
+      "rpc": "https://base.gateway.tenderly.co",
+      "deployer": "0xed422098669cBB60CAAf26E01485bAFdbAF9eBEA",
+      "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
+    },
+    {
+      "name": "arbitrum",
+      "eid": 30110,
+      "rpc": "https://arbitrum.gateway.tenderly.co",
+      "deployer": "0xed422098669cBB60CAAf26E01485bAFdbAF9eBEA",
+      "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
+    }
+  ]
+} 

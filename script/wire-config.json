@@ -1,0 +1,46 @@
+{
+  "chains": {
+    "base": {
+      "eid": 30184,
+      "rpc": "https://base.gateway.tenderly.co",
+      "signer": "WILL_USE_PRIVATE_KEY",
+      "oapp": "0xEDf65147AE4e05BED6fb4DC391E175cF5869358d"
+    },
+    "arbitrum": {
+      "eid": 30110,
+      "rpc": "https://arbitrum.gateway.tenderly.co",
+      "signer": "WILL_USE_PRIVATE_KEY",
+      "oapp": "0x89B21351db49864A537D905aeEf10142aE2091B9"
+    }
+  },
+  "pathways": [
+    {
+      "from": "base",
+      "to": "arbitrum",
+      "requiredDVNs": ["LayerZero Labs"],
+      "optionalDVNs": [],
+      "optionalDVNThreshold": 0,
+      "confirmations": [3, 5],
+      "maxMessageSize": 10000,
+      "enforcedOptions": [
+        {
+          "lzReceiveGas": 150000,
+          "lzReceiveValue": 0,
+          "lzComposeGas": 0,
+          "lzComposeIndex": 0,
+          "lzNativeDropAmount": 0,
+          "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+        },
+        {
+          "lzReceiveGas": 180000,
+          "lzReceiveValue": 0,
+          "lzComposeGas": 0,
+          "lzComposeIndex": 0,
+          "lzNativeDropAmount": 0,
+          "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+        }
+      ]
+    }
+  ],
+  "bidirectional": true
+} 

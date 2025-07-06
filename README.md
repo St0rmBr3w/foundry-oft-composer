@@ -94,6 +94,34 @@ $ anvil
 $ forge script script/Counter.s.sol:CounterScript --rpc-url <your_rpc_url> --private-key <your_private_key> --via-ir
 ```
 
+### Deploy and Wire OApps
+
+See [script/DEPLOY_README.md](script/DEPLOY_README.md) for detailed instructions on:
+- Deploying MyOFT contracts to multiple chains
+- Wiring LayerZero pathways between deployed OApps
+- Testing cross-chain transfers
+
+Quick start:
+```bash
+# Download LayerZero metadata
+./script/download-deployments.sh
+
+# Deploy MyOFT to multiple chains
+forge script script/DeployMyOFT.s.sol:DeployMyOFT \
+  --sig "run(string,string)" \
+  "script/deploy-config-base-arbitrum.json" \
+  "layerzero-deployments.json" \
+  --via-ir --broadcast
+
+# Wire LayerZero pathways
+forge script script/WireOApp.s.sol:WireOApp \
+  --sig "run(string,string,string)" \
+  "script/wire-config-base-arbitrum.json" \
+  "layerzero-deployments.json" \
+  "layerzero-dvns.json" \
+  --via-ir --broadcast
+```
+
 ### Cast
 
 ```shell

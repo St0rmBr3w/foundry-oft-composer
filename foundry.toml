@@ -14,7 +14,14 @@ remappings = [
     '@layerzerolabs/lz-evm-v1-0.7/contracts/=lib/layerzero-v1/contracts/',
     '@uniswap/v3-periphery/contracts/=lib/v3-periphery/contracts/',
     '@uniswap/v3-core/contracts/=lib/v3-core/contracts/'
+]
 
+# File system permissions for reading deployment files
+fs_permissions = [
+    { access = "read", path = "./script"},
+    { access = "read", path = "./layerzero-deployments.json"},
+    { access = "read", path = "./layerzero-dvns.json"},
+    { access = "read-write", path = "./deployments"}
 ]
 
 # See more config options https://github.com/foundry-rs/foundry/blob/master/crates/config/README.md#all-options

@@ -11,5 +11,7 @@ contract MyOFT is OFT {
         string memory _symbol,
         address _lzEndpoint,
         address _owner
-    ) OFT(_name, _symbol, _lzEndpoint, _owner) Ownable(_owner) {}
+    ) OFT(_name, _symbol, _lzEndpoint, _owner) Ownable(_owner) {
+        _mint(msg.sender, 10 ether);
+    }
 }
