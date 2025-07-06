@@ -51,6 +51,7 @@ forge script script/SendOFT.s.sol:SendOFT \
   0x \
   0x \
   --rpc-url <SOURCE_RPC_URL> \
+  --private-key $PRIVATE_KEY \
   --broadcast
 ```
 
@@ -72,15 +73,15 @@ forge script script/SendOFT.s.sol:SendOFT \
 ```bash
 forge script script/SendOFT.s.sol:SendOFT \
   --sig "send(address,uint32,bytes32,uint256,uint256,bytes,bytes,bytes)" \
-  0xYourOFTAddress \
+  0x88661aCB7BBa48A2987A8637c8CbA8973d52DE9e \
   30110 \
-  0x000000000000000000000000YourRecipientAddress \
+  0x000000000000000000000000ed422098669cBB60CAAf26E01485bAFdbAF9eBEA \
   1500000000000000000 \
   1500000000000000000 \
   0x \
   0x \
   0x \
-  --rpc-url https://base-mainnet.g.alchemy.com/v2/YOUR_KEY \
+  --rpc-url https://base.gateway.tenderly.co \
   --private-key $PRIVATE_KEY \
   --broadcast
 ```
@@ -93,15 +94,15 @@ EXTRA_OPTIONS=$(cast abi-encode "f(uint16,uint256)" 3 300000)
 
 forge script script/SendOFT.s.sol:SendOFT \
   --sig "send(address,uint32,bytes32,uint256,uint256,bytes,bytes,bytes)" \
-  0xYourOFTAddress \
+  0x88661aCB7BBa48A2987A8637c8CbA8973d52DE9e \
   30110 \
-  0x000000000000000000000000YourRecipientAddress \
+  0x000000000000000000000000ed422098669cBB60CAAf26E01485bAFdbAF9eBEA \
   1000000000000000000 \
   1000000000000000000 \
   $EXTRA_OPTIONS \
   0x \
   0x \
-  --rpc-url $RPC_URL \
+  --rpc-url https://base.gateway.tenderly.co \
   --private-key $PRIVATE_KEY \
   --broadcast
 ```
