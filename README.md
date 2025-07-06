@@ -118,36 +118,34 @@ Defines where and how to deploy your OFT:
   - `deployer`: Token owner address
   - `lzEndpoint`: Set to "auto" or specify address
 
-### 2. Wire Configuration (`script/wire-config.json`)
+### 2. Wire Configuration (`script/wire-config-simple.json`)
 
-Configures cross-chain pathways:
+Also simplified to use chain IDs:
 
 ```json
 {
   "chains": {
-    "base": {
-      "eid": 30184,
+    "8453": {                    // Chain ID as key
       "rpc": "https://base.gateway.tenderly.co",
-      "oapp": "0xYourDeployedOFT"  // From deployment step
+      "oapp": "0xYourDeployedOFT"
     },
-    "arbitrum": {
-      "eid": 30110,
+    "42161": {
       "rpc": "https://arbitrum.gateway.tenderly.co",
       "oapp": "0xYourDeployedOFT"
     }
   },
   "pathways": [
     {
-      "from": "base",
-      "to": "arbitrum",
-      "requiredDVNs": ["LayerZero Labs"],  // Auto-resolved
+      "from": 8453,              // Use chain IDs
+      "to": 42161,
+      "requiredDVNs": ["LayerZero Labs"],
       "optionalDVNs": [],
       "optionalDVNThreshold": 0,
-      "confirmations": [6, 6],    // [src→dst, dst→src]
+      "confirmations": [6, 6],
       "maxMessageSize": 10000,
       "enforcedOptions": [
         {
-          "lzReceiveGas": 200000,  // Gas for receiving
+          "lzReceiveGas": 200000,
           "lzReceiveValue": 0,
           "lzComposeGas": 0,
           "lzComposeIndex": 0,
@@ -157,16 +155,16 @@ Configures cross-chain pathways:
       ]
     }
   ],
-  "bidirectional": true  // Auto-create reverse pathway
+  "bidirectional": true
 }
 ```
 
 **Parameters:**
-- `chains`: OApp addresses on each chain
-- `pathways`: Directional configurations
-  - `requiredDVNs`: Security providers (names auto-resolved to addresses)
-  - `confirmations`: Block confirmations before verification
-  - `enforcedOptions`: Gas and execution settings per message type
+- `chains`: Map chain IDs to deployed OApp addresses
+- `pathways`: Define connections using chain IDs
+- Everything else works the same!
+
+> 📖 **Need more details?** See [WIRE_CONFIG_GUIDE.md](WIRE_CONFIG_GUIDE.md) for complete parameter explanations, security recommendations, and examples.
 
 ### 3. Downloaded Metadata
 
