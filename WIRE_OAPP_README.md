@@ -104,22 +104,22 @@ Wire OApp pathways:
 
 ```bash
 forge script script/WireOApp.s.sol:WireOApp \
-  --sig "run(string,string,string)" \
-  "utils/wire-config.json" \
-  "layerzero-deployments.json" \
-  "layerzero-dvns.json" \
-  --via-ir --broadcast --slow
+  -s "run(string,string,string)" \
+  "./utils/wire-config.json" \
+  "./layerzero-deployments.json" \
+  "./layerzero-dvns.json" \
+  --broadcast --slow --multi -vvv
 ```
 
 Check existing configuration (dry run):
 
 ```bash
 CHECK_ONLY=true forge script script/WireOApp.s.sol:WireOApp \
-  --sig "run(string,string,string)" \
-  "utils/wire-config.json" \
-  "layerzero-deployments.json" \
-  "layerzero-dvns.json" \
-  --via-ir
+  -s "run(string,string,string)" \
+  "./utils/wire-config.json" \
+  "./layerzero-deployments.json" \
+  "./layerzero-dvns.json" \
+  -vvv
 ```
 
 ## Configuration
@@ -238,19 +238,19 @@ For large deployments, wire source and destination chains separately:
 ```bash
 # Wire source chains only
 forge script script/WireOApp.s.sol:WireOApp \
-  --sig "runSourceOnly(string,string,string)" \
-  "utils/wire-config.json" \
-  "layerzero-deployments.json" \
-  "layerzero-dvns.json" \
-  --via-ir --broadcast
+  -s "runSourceOnly(string,string,string)" \
+  "./utils/wire-config.json" \
+  "./layerzero-deployments.json" \
+  "./layerzero-dvns.json" \
+  --broadcast --multi -vvv
 
 # Wire destination chains only  
 forge script script/WireOApp.s.sol:WireOApp \
-  --sig "runDestinationOnly(string,string,string)" \
-  "utils/wire-config.json" \
-  "layerzero-deployments.json" \
-  "layerzero-dvns.json" \
-  --via-ir --broadcast
+  -s "runDestinationOnly(string,string,string)" \
+  "./utils/wire-config.json" \
+  "./layerzero-deployments.json" \
+  "./layerzero-dvns.json" \
+  --broadcast --multi -vvv
 ```
 
 ### Check-Only Mode

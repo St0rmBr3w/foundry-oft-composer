@@ -77,15 +77,14 @@ Deploy your OFT to multiple chains:
 
 ```bash
 forge script script/DeployMyOFT.s.sol:DeployMyOFT \
-  --sig "run(string,string)" \
+  --sig "run(string)" \
   "utils/deploy-config.json" \
-  "layerzero-deployments.json" \
-  --via-ir --broadcast --multi
+  --via-ir --broadcast
 ```
 
 This script:
 - Reads your token configuration from `deploy-config.json`
-- Automatically looks up LayerZero endpoint addresses from `layerzero-deployments.json`
+- Automatically looks up LayerZero endpoint addresses from downloaded metadata
 - Deploys MyOFT to all specified chains
 - Saves deployment addresses to `deployments/` directory
 
@@ -97,11 +96,11 @@ Wire LayerZero pathways between your deployed OApps:
 
 ```bash
 forge script script/WireOApp.s.sol:WireOApp \
-  --sig "run(string,string,string)" \
-  "utils/wire-config.json" \
-  "layerzero-deployments.json" \
-  "layerzero-dvns.json" \
-  --via-ir --broadcast --slow
+  -s "run(string,string,string)" \
+  "./utils/wire-config.json" \
+  "./layerzero-deployments.json" \
+  "./layerzero-dvns.json" \
+  --broadcast --slow --multi -vvv
 ```
 
 This script:
@@ -130,26 +129,24 @@ forge script script/SendOFT.s.sol:SendOFT \
   0x \                     # Extra options
   0x \                     # Compose message
   0x \                     # OFT command
-  --rpc-url $BASE_RPC \
-  --private-key $PRIVATE_KEY \
-  --broadcast
+  --broadcast \
+  -vvv --rpc-url $RPC_URL --via-ir
 ```
 
 **Example sending from Base to Arbitrum:**
 ```bash
 forge script script/SendOFT.s.sol:SendOFT \
   --sig "send(address,uint32,bytes32,uint256,uint256,bytes,bytes,bytes)" \
-  0x88661aCB7BBa48A2987A8637c8CbA8973d52DE9e \
+  0x520e5A32984b1e378f0A1C478C4cE083275643DC \
   30110 \
   0x000000000000000000000000ed422098669cBB60CAAf26E01485bAFdbAF9eBEA \
-  1000000000000000000 \
+  15000000000000 \
   0 \
   0x \
   0x \
   0x \
-  --rpc-url https://base.gateway.tenderly.co \
-  --private-key $PRIVATE_KEY \
-  --broadcast
+  --broadcast \
+  -vvv --rpc-url $RPC_URL --via-ir
 ```
 
 ## Next Steps

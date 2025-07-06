@@ -50,9 +50,8 @@ forge script script/SendOFT.s.sol:SendOFT \
   0x \
   0x \
   0x \
-  --rpc-url <SOURCE_RPC_URL> \
-  --private-key $PRIVATE_KEY \
-  --broadcast
+  --broadcast \
+  -vvv --rpc-url $RPC_URL --via-ir
 ```
 
 ## Parameters
@@ -73,17 +72,16 @@ forge script script/SendOFT.s.sol:SendOFT \
 ```bash
 forge script script/SendOFT.s.sol:SendOFT \
   --sig "send(address,uint32,bytes32,uint256,uint256,bytes,bytes,bytes)" \
-  0x88661aCB7BBa48A2987A8637c8CbA8973d52DE9e \
+  0x520e5A32984b1e378f0A1C478C4cE083275643DC \
   30110 \
   0x000000000000000000000000ed422098669cBB60CAAf26E01485bAFdbAF9eBEA \
-  1500000000000000000 \
-  1500000000000000000 \
+  15000000000000 \
+  0 \
   0x \
   0x \
   0x \
-  --rpc-url https://base.gateway.tenderly.co \
-  --private-key $PRIVATE_KEY \
-  --broadcast
+  --broadcast \
+  -vvv --rpc-url $RPC_URL --via-ir
 ```
 
 ### Send with custom gas limit
@@ -94,17 +92,16 @@ EXTRA_OPTIONS=$(cast abi-encode "f(uint16,uint256)" 3 300000)
 
 forge script script/SendOFT.s.sol:SendOFT \
   --sig "send(address,uint32,bytes32,uint256,uint256,bytes,bytes,bytes)" \
-  0x88661aCB7BBa48A2987A8637c8CbA8973d52DE9e \
+  0x520e5A32984b1e378f0A1C478C4cE083275643DC \
   30110 \
   0x000000000000000000000000ed422098669cBB60CAAf26E01485bAFdbAF9eBEA \
   1000000000000000000 \
-  1000000000000000000 \
+  0 \
   $EXTRA_OPTIONS \
   0x \
   0x \
-  --rpc-url https://base.gateway.tenderly.co \
-  --private-key $PRIVATE_KEY \
-  --broadcast
+  --broadcast \
+  -vvv --rpc-url $RPC_URL --via-ir
 ```
 
 ### Common Endpoint IDs
