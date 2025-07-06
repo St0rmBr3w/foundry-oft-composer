@@ -20,7 +20,7 @@
       "requiredDVNs": ["LayerZero Labs"],
       "optionalDVNs": [],
       "optionalDVNThreshold": 0,
-      "confirmations": [3, 5],
+      "confirmations": [3 /*A to B*/, 5 /*B to A*/],
       "maxMessageSize": 10000,
       "enforcedOptions": [
         {
