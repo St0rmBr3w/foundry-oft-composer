@@ -21,8 +21,8 @@ fs_permissions = [
     { access = "read", path = "./script"},
     { access = "read", path = "./layerzero-deployments.json"},
     { access = "read", path = "./layerzero-dvns.json"},
-    { access = "read", path = "./utils/wire-config.json"},
-    { access = "read", path = "./utils/deploy-config.json"},
+    { access = "read", path = "./utils/layerzero.config.json"},
+    { access = "read", path = "./utils/deploy.config.json"},
     { access = "read-write", path = "./deployments"}
 ]
 
