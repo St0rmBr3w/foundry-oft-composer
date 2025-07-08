@@ -112,15 +112,28 @@ Create `utils/layerzero.config.json`:
       "confirmations": [3, 5],
       "maxMessageSize": 10000,
       "enforcedOptions": [
-        {
-          "msgType": 1,
-          "lzReceiveGas": 150000,
-          "lzReceiveValue": 0,
-          "lzComposeGas": 0,
-          "lzComposeIndex": 0,
-          "lzNativeDropAmount": 0,
-          "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
-        }
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 150000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ],
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 180000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ]
       ]
     }
   ],
@@ -133,6 +146,17 @@ Create `utils/layerzero.config.json`:
 ```bash
 export PRIVATE_KEY=your_private_key_here
 CHECK_ONLY=true forge script script/WireOApp.s.sol:WireOApp \
+  -s "run(string,string,string)" \
+  "./utils/layerzero.config.json" \
+  "./layerzero-deployments.json" \
+  "./layerzero-dvns.json" \
+  --via-ir -vvv
+```
+
+For detailed output showing all configuration values:
+
+```bash
+VERBOSE=true CHECK_ONLY=true forge script script/WireOApp.s.sol:WireOApp \
   -s "run(string,string,string)" \
   "./utils/layerzero.config.json" \
   "./layerzero-deployments.json" \
@@ -174,15 +198,28 @@ Each pathway defines a unidirectional communication channel:
   "confirmations": [15, 10],               // [A→B blocks, B→A blocks]
   "maxMessageSize": 10000,                 // Maximum message size in bytes
   "enforcedOptions": [                     // Minimum execution requirements
-    {
-      "msgType": 1,
-      "lzReceiveGas": 200000,             // Gas for standard messages
-      "lzReceiveValue": 0,                // ETH value to send
-      "lzComposeGas": 0,                  // Gas for composed messages
-      "lzComposeIndex": 0,                // Compose configuration index
-      "lzNativeDropAmount": 0,            // Native tokens to drop
-      "lzNativeDropRecipient": "0x..."    // Drop recipient
-    }
+    [ // A→B direction options
+      {
+        "msgType": 1,
+        "lzReceiveGas": 200000,           // Gas for standard messages
+        "lzReceiveValue": 0,              // ETH value to send
+        "lzComposeGas": 0,                // Gas for composed messages
+        "lzComposeIndex": 0,              // Compose configuration index
+        "lzNativeDropAmount": 0,          // Native tokens to drop
+        "lzNativeDropRecipient": "0x..."  // Drop recipient
+      }
+    ],
+    [ // B→A direction options (only used with bidirectional: true)
+      {
+        "msgType": 1,
+        "lzReceiveGas": 180000,
+        "lzReceiveValue": 0,
+        "lzComposeGas": 0,
+        "lzComposeIndex": 0,
+        "lzNativeDropAmount": 0,
+        "lzNativeDropRecipient": "0x..."
+      }
+    ]
   ]
 }
 ```
@@ -207,6 +244,11 @@ Each pathway defines a unidirectional communication channel:
 - Set minimum gas to prevent out-of-gas failures
 - Users can always provide more gas, but not less
 - Configure separately for standard and composed messages
+- **New Format**: Array of arrays to support different options per direction
+  - First array: Options for A→B messages
+  - Second array: Options for B→A messages (when bidirectional is true)
+- **Flexible Message Types**: Configure any message type (1, 2, 3, etc.)
+- **Multiple Options**: Each direction can have multiple message types configured
 
 ## Advanced Usage
 
@@ -267,15 +309,30 @@ Wire multiple chains with different configurations:
       "requiredDVNs": ["LayerZero Labs", "Google Cloud"],
       "confirmations": [15, 10],
       "maxMessageSize": 10000,
-      "enforcedOptions": [{
-        "msgType": 1,
-        "lzReceiveGas": 250000,
-        "lzReceiveValue": 0,
-        "lzComposeGas": 0,
-        "lzComposeIndex": 0,
-        "lzNativeDropAmount": 0,
-        "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
-      }]
+      "enforcedOptions": [
+        [ // Ethereum→Arbitrum
+          {
+            "msgType": 1,
+            "lzReceiveGas": 250000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ],
+        [ // Arbitrum→Ethereum
+          {
+            "msgType": 1,
+            "lzReceiveGas": 300000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ]
+      ]
     },
     {
       "from": "ethereum",
@@ -283,20 +340,55 @@ Wire multiple chains with different configurations:
       "requiredDVNs": ["LayerZero Labs"],
       "confirmations": [15, 3],
       "maxMessageSize": 10000,
-      "enforcedOptions": [{
-        "msgType": 1,
-        "lzReceiveGas": 150000,
-        "lzReceiveValue": 0,
-        "lzComposeGas": 0,
-        "lzComposeIndex": 0,
-        "lzNativeDropAmount": 0,
-        "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
-      }]
+      "enforcedOptions": [
+        [ // Ethereum→Base
+          {
+            "msgType": 1,
+            "lzReceiveGas": 150000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          },
+          {
+            "msgType": 2,
+            "lzReceiveGas": 0,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 100000,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ]
+      ]
     }
   ],
   "bidirectional": true
 }
 ```
+
+### Backward Compatibility
+
+The script still supports the old single-array format:
+
+```json
+{
+  "enforcedOptions": [
+    {
+      "msgType": 1,
+      "lzReceiveGas": 200000,
+      "lzReceiveValue": 0,
+      "lzComposeGas": 0,
+      "lzComposeIndex": 0,
+      "lzNativeDropAmount": 0,
+      "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+    }
+  ]
+}
+```
+
+This will be automatically converted to the new format and applied to both directions.
 
 ## Troubleshooting
 
