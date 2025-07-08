@@ -14,16 +14,24 @@ Deploy and use Omnichain Fungible Tokens (OFT) with LayerZero V2 using Foundry. 
 
 ## Table of Contents
 
-- [Prerequisite Knowledge](#prerequisite-knowledge)
-- [Requirements](#requirements)
-- [Setup](#setup)
-- [Build](#build)
-- [Deploy](#deploy)
-- [Enable Messaging](#enable-messaging)
-- [Sending OFT](#sending-oft)
-- [Next Steps](#next-steps)
-- [Production Deployment Checklist](#production-deployment-checklist)
-- [Appendix](#appendix)
+- [LayerZero OFT Example with Foundry](#layerzero-oft-example-with-foundry)
+  - [Table of Contents](#table-of-contents)
+  - [Prerequisite Knowledge](#prerequisite-knowledge)
+  - [Requirements](#requirements)
+  - [Setup](#setup)
+  - [Build](#build)
+  - [Deploy](#deploy)
+  - [Enable Messaging](#enable-messaging)
+  - [Sending OFT](#sending-oft)
+  - [Next Steps](#next-steps)
+  - [Production Deployment Checklist](#production-deployment-checklist)
+  - [Appendix](#appendix)
+    - [Running Tests](#running-tests)
+    - [Adding Other Chains](#adding-other-chains)
+    - [Using Multisigs](#using-multisigs)
+    - [LayerZero Hardhat Helper Tasks (detailed)](#layerzero-hardhat-helper-tasks-detailed)
+    - [Contract Verification](#contract-verification)
+    - [Troubleshooting](#troubleshooting)
 
 ## Prerequisite Knowledge
 
@@ -48,18 +56,26 @@ cd foundry-vanilla
 forge install
 ```
 
-2. **Download LayerZero metadata:**
-```bash
-./utils/download-deployments.sh
-```
-
-This downloads the latest LayerZero contract addresses and DVN configurations to `layerzero-deployments.json` and `layerzero-dvns.json`.
-
-3. **Configure environment:**
+2. **Configure environment:**
 ```bash
 cp .env.example .env
 # Edit .env with your private key and RPC URLs
 ```
+
+3. **LayerZero metadata (Optional):**
+
+The WireOApp script automatically fetches LayerZero deployment and DVN data from the official APIs. However, if you prefer to use local files or work offline, you can download them:
+
+```bash
+# Optional: Download metadata files locally
+./utils/download-deployments.sh
+```
+
+This downloads:
+- `layerzero-deployments.json` - LayerZero contract addresses
+- `layerzero-dvns.json` - DVN configurations
+
+**Note:** When using the API feature (default), you must include the `--ffi` flag in your forge commands.
 
 4. **Update configuration files:**
    - Edit `utils/deploy.config.json` with your token details and chain info
@@ -95,22 +111,33 @@ This script:
 Wire LayerZero pathways between your deployed OApps:
 
 ```bash
+# Using automatic API fetching (recommended)
+forge script script/WireOApp.s.sol:WireOApp \
+  -s "run(string)" \
+  "./utils/layerzero.config.json" \
+  --broadcast --slow --multi --via-ir --ffi -vvv
+```
+
+Or if using local metadata files:
+
+```bash
+# Using local files
 forge script script/WireOApp.s.sol:WireOApp \
   -s "run(string,string,string)" \
   "./utils/layerzero.config.json" \
   "./layerzero-deployments.json" \
   "./layerzero-dvns.json" \
-  --broadcast --slow --multi -vvv
+  --broadcast --slow --multi --via-ir -vvv
 ```
 
 This script:
 - Reads your pathway configuration from `layerzero.config.json`
-- Automatically resolves DVN names to chain-specific addresses from `layerzero-dvns.json`
+- Automatically fetches or loads LayerZero deployment and DVN data
 - Sets up peers between OApps on different chains
 - Configures security settings (DVNs, confirmations)
 - Sets enforced gas options for cross-chain messages
 
-> **Note:** Use `--slow` flag to avoid nonce issues when configuring multiple chains.
+> **Note:** Use `--slow` flag to avoid nonce issues when configuring multiple chains. The `--ffi` flag is required when using API fetching.
 
 **Helper Tasks:** See [LayerZero Hardhat Helper Tasks](#layerzero-hardhat-helper-tasks-detailed) for partial wiring options.
 
