@@ -15,6 +15,13 @@
       "rpc": "https://arbitrum.gateway.tenderly.co",
       "deployer": "0xed422098669cBB60CAAf26E01485bAFdbAF9eBEA",
       "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
+    },
+    {
+      "name": "optimism",
+      "eid": 30111,
+      "rpc": "https://optimism.gateway.tenderly.co",
+      "deployer": "0xed422098669cBB60CAAf26E01485bAFdbAF9eBEA",
+      "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
     }
   ]
 } 

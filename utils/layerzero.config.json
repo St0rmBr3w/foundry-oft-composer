@@ -4,13 +4,19 @@
       "eid": 30184,
       "rpc": "https://base.gateway.tenderly.co",
       "signer": "WILL_USE_PRIVATE_KEY",
-      "oapp": "0xc05F9B8E9871870274c1401E338cBc347D7aEEA9"
+      "oapp": "0x603E5d61AC37f84f3601618763DF1E1647298436"
     },
     "arbitrum": {
       "eid": 30110,
       "rpc": "https://arbitrum.gateway.tenderly.co",
       "signer": "WILL_USE_PRIVATE_KEY",
-      "oapp": "0x8212620A9cf35CE25a46fDF6fbC594d3490F2c72"
+      "oapp": "0x6b1C374105467d1fC1090C989BcbbCC172c8A89c"
+    },
+    "optimism": {
+      "eid": 30111,
+      "rpc": "https://optimism.gateway.tenderly.co",
+      "signer": "WILL_USE_PRIVATE_KEY",
+      "oapp": "0xCb903fD1Bc4725B5AF2D95D517CDe8C14ad171Fe"
     }
   },
   "pathways": [
@@ -47,6 +53,72 @@
           {
             "msgType": 1,
             "lzReceiveGas": 180000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ]
+      ]
+    },
+    {
+      "from": "arbitrum",
+      "to": "optimism",
+      "requiredDVNs": ["LayerZero Labs", "Google"],
+      "optionalDVNs": [],
+      "optionalDVNThreshold": 0,
+      "confirmations": [3, 5],
+      "maxMessageSize": 10000,
+      "enforcedOptions": [
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 150000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ],
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 150000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ]
+      ]
+    },
+    {
+      "from": "optimism",
+      "to": "base",
+      "requiredDVNs": ["LayerZero Labs", "Google"],
+      "optionalDVNs": [],
+      "optionalDVNThreshold": 0,
+      "confirmations": [3, 5],
+      "maxMessageSize": 10000,
+      "enforcedOptions": [
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 150000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ],
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 150000,
             "lzReceiveValue": 0,
             "lzComposeGas": 0,
             "lzComposeIndex": 0,
