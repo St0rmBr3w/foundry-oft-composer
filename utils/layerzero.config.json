@@ -17,28 +17,43 @@
     {
       "from": "base",
       "to": "arbitrum",
-      "requiredDVNs": ["LayerZero Labs"],
+      "requiredDVNs": ["LayerZero Labs", "Google"],
       "optionalDVNs": [],
       "optionalDVNThreshold": 0,
       "confirmations": [3, 5],
       "maxMessageSize": 10000,
       "enforcedOptions": [
-        {
-          "lzReceiveGas": 150000,
-          "lzReceiveValue": 0,
-          "lzComposeGas": 0,
-          "lzComposeIndex": 0,
-          "lzNativeDropAmount": 0,
-          "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
-        },
-        {
-          "lzReceiveGas": 180000,
-          "lzReceiveValue": 0,
-          "lzComposeGas": 0,
-          "lzComposeIndex": 0,
-          "lzNativeDropAmount": 0,
-          "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
-        }
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 150000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          },
+          {
+            "msgType": 2,
+            "lzReceiveGas": 150000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ],
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 180000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ]
       ]
     }
   ],

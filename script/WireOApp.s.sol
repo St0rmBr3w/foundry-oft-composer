@@ -111,7 +111,7 @@ contract WireOApp is Script {
         address[] dstOptionalDVNs;    // Optional DVNs on destination chain
         uint8 optionalDVNThreshold;
         uint32 maxMessageSize;
-        EnforcedOptions enforcedOptions;
+        EnforcedOptions[] enforcedOptions;  // Array of enforced options for different message types
     }
 
     struct RawPathwayConfig {
@@ -122,16 +122,17 @@ contract WireOApp is Script {
         uint8 optionalDVNThreshold;
         uint64[] confirmations; // [AtoB, BtoA]
         uint32 maxMessageSize;
-        EnforcedOptions[] enforcedOptions; // [AtoB, BtoA]
+        EnforcedOptions[][] enforcedOptions; // [AtoB options[], BtoA options[]]
     }
     
     struct EnforcedOptions {
-        uint128 lzReceiveGas;        // Gas for standard message (msgType 1)
-        uint128 lzReceiveValue;      // Value for standard message (msgType 1)
-        uint128 lzComposeGas;        // Gas for composed message (msgType 2)
-        uint16 lzComposeIndex;       // Index for composed message (msgType 2)
-        uint128 lzNativeDropAmount;  // Amount for native drop
-        address lzNativeDropRecipient; // Recipient for native drop
+        uint16 msgType;                      // Message type (1 for standard, 2 for composed, etc.)
+        uint128 lzReceiveGas;                // Gas for standard message (msgType 1)
+        uint128 lzReceiveValue;              // Value for standard message (msgType 1)
+        uint128 lzComposeGas;                // Gas for composed message (msgType 2)
+        uint16 lzComposeIndex;               // Index for composed message (msgType 2)
+        uint128 lzNativeDropAmount;          // Amount for native drop
+        address lzNativeDropRecipient;       // Recipient for native drop
     }
 
     struct WireConfig {
@@ -574,55 +575,66 @@ contract WireOApp is Script {
     function setEnforcedOptions(
         address oapp,
         uint32 dstEid,
-        EnforcedOptions memory options
+        EnforcedOptions[] memory options
     ) internal returns (bool) {
-        // Count how many options we actually need
-        uint256 optionCount = 0;
-        if (options.lzReceiveGas > 0) optionCount++;
-        if (options.lzComposeGas > 0) optionCount++;
-        
-        if (optionCount == 0) {
+        if (options.length == 0) {
             return false;
         }
         
-        // Build expected options and check against current
-        EnforcedOptionParam[] memory params = new EnforcedOptionParam[](0);
+        // Build enforced option params for each message type
+        EnforcedOptionParam[] memory params = new EnforcedOptionParam[](options.length);
         uint256 paramsNeeded = 0;
         
-        // Check standard message options
-        if (options.lzReceiveGas > 0) {
-            bytes memory expectedOptions = OptionsBuilder.newOptions()
-                .addExecutorLzReceiveOption(options.lzReceiveGas, options.lzReceiveValue);
+        for (uint256 i = 0; i < options.length; i++) {
+            EnforcedOptions memory opt = options[i];
             
-            // Add native drop if specified
-            if (options.lzNativeDropAmount > 0 && options.lzNativeDropRecipient != address(0)) {
-                expectedOptions = OptionsBuilder.addExecutorNativeDropOption(
+            // Build expected options based on what's actually set
+            bytes memory expectedOptions = OptionsBuilder.newOptions();
+            
+            // Add lzReceive option if gas is specified
+            if (opt.lzReceiveGas > 0) {
+                expectedOptions = OptionsBuilder.addExecutorLzReceiveOption(
                     expectedOptions,
-                    options.lzNativeDropAmount,
-                    bytes32(uint256(uint160(options.lzNativeDropRecipient)))
+                    opt.lzReceiveGas,
+                    opt.lzReceiveValue
                 );
             }
             
-            bytes memory currentOptions = IOAppWithEnforcedOptions(oapp).enforcedOptions(dstEid, MSG_TYPE_STANDARD);
-            if (!areOptionsEqual(currentOptions, expectedOptions)) {
-                paramsNeeded++;
-                console.log("Standard message enforced options need update");
-            } else {
-                console.log("Standard message enforced options already set correctly");
+            // Add lzCompose option if gas is specified
+            if (opt.lzComposeGas > 0) {
+                expectedOptions = OptionsBuilder.addExecutorLzComposeOption(
+                    expectedOptions,
+                    opt.lzComposeIndex,
+                    opt.lzComposeGas,
+                    0
+                );
             }
-        }
-        
-        // Check composed message options
-        if (options.lzComposeGas > 0) {
-            bytes memory expectedOptions = OptionsBuilder.newOptions()
-                .addExecutorLzComposeOption(options.lzComposeIndex, options.lzComposeGas, 0);
             
-            bytes memory currentOptions = IOAppWithEnforcedOptions(oapp).enforcedOptions(dstEid, MSG_TYPE_COMPOSED);
+            // Add native drop if specified
+            if (opt.lzNativeDropAmount > 0 && opt.lzNativeDropRecipient != address(0)) {
+                expectedOptions = OptionsBuilder.addExecutorNativeDropOption(
+                    expectedOptions,
+                    opt.lzNativeDropAmount,
+                    bytes32(uint256(uint160(opt.lzNativeDropRecipient)))
+                );
+            }
+            
+            // Skip if no options were actually added
+            if (expectedOptions.length == 1) {
+                continue;
+            }
+            
+            bytes memory currentOptions = IOAppWithEnforcedOptions(oapp).enforcedOptions(dstEid, opt.msgType);
             if (!areOptionsEqual(currentOptions, expectedOptions)) {
+                params[paramsNeeded] = EnforcedOptionParam({
+                    eid: dstEid,
+                    msgType: opt.msgType,
+                    options: expectedOptions
+                });
                 paramsNeeded++;
-                console.log("Composed message enforced options need update");
+                console.log("Message type", opt.msgType, "enforced options need update");
             } else {
-                console.log("Composed message enforced options already set correctly");
+                console.log("Message type", opt.msgType, "enforced options already set correctly");
             }
         }
         
@@ -630,48 +642,13 @@ contract WireOApp is Script {
             return false;
         }
         
-        params = new EnforcedOptionParam[](paramsNeeded);
-        uint256 paramIndex = 0;
-        
-        // Build options for standard message (msgType 1)
-        if (options.lzReceiveGas > 0) {
-            bytes memory expectedOptions = OptionsBuilder.newOptions()
-                .addExecutorLzReceiveOption(options.lzReceiveGas, options.lzReceiveValue);
-            
-            // Add native drop if specified
-            if (options.lzNativeDropAmount > 0 && options.lzNativeDropRecipient != address(0)) {
-                expectedOptions = OptionsBuilder.addExecutorNativeDropOption(
-                    expectedOptions,
-                    options.lzNativeDropAmount,
-                    bytes32(uint256(uint160(options.lzNativeDropRecipient)))
-                );
+        // Resize params array to actual size needed
+        if (paramsNeeded < params.length) {
+            EnforcedOptionParam[] memory resizedParams = new EnforcedOptionParam[](paramsNeeded);
+            for (uint256 i = 0; i < paramsNeeded; i++) {
+                resizedParams[i] = params[i];
             }
-            
-            bytes memory currentOptions = IOAppWithEnforcedOptions(oapp).enforcedOptions(dstEid, MSG_TYPE_STANDARD);
-            if (!areOptionsEqual(currentOptions, expectedOptions)) {
-                params[paramIndex] = EnforcedOptionParam({
-                    eid: dstEid,
-                    msgType: MSG_TYPE_STANDARD,
-                    options: expectedOptions
-                });
-                paramIndex++;
-            }
-        }
-        
-        // Build options for composed message (msgType 2)
-        if (options.lzComposeGas > 0) {
-            bytes memory expectedOptions = OptionsBuilder.newOptions()
-                .addExecutorLzComposeOption(options.lzComposeIndex, options.lzComposeGas, 0);
-                
-            bytes memory currentOptions = IOAppWithEnforcedOptions(oapp).enforcedOptions(dstEid, MSG_TYPE_COMPOSED);
-            if (!areOptionsEqual(currentOptions, expectedOptions)) {
-                params[paramIndex] = EnforcedOptionParam({
-                    eid: dstEid,
-                    msgType: MSG_TYPE_COMPOSED,
-                    options: expectedOptions
-                });
-                paramIndex++;
-            }
+            params = resizedParams;
         }
         
         // Set enforced options on the OApp
@@ -771,13 +748,10 @@ contract WireOApp is Script {
         }
         
         // Check enforced options
-        if (pathway.enforcedOptions.lzReceiveGas > 0) {
-            bytes memory enforcedOpts = IOAppWithEnforcedOptions(pathway.srcOApp).enforcedOptions(pathway.dstEid, MSG_TYPE_STANDARD);
-            console.log("  Enforced options (standard):", enforcedOpts.length > 0 ? "YES" : "NO");
-        }
-        if (pathway.enforcedOptions.lzComposeGas > 0) {
-            bytes memory enforcedOpts = IOAppWithEnforcedOptions(pathway.srcOApp).enforcedOptions(pathway.dstEid, MSG_TYPE_COMPOSED);
-            console.log("  Enforced options (compose):", enforcedOpts.length > 0 ? "YES" : "NO");
+        for (uint256 i = 0; i < pathway.enforcedOptions.length; i++) {
+            EnforcedOptions memory opt = pathway.enforcedOptions[i];
+            bytes memory enforcedOpts = IOAppWithEnforcedOptions(pathway.srcOApp).enforcedOptions(pathway.dstEid, opt.msgType);
+            console.log("  Enforced options (msgType", opt.msgType, "):", enforcedOpts.length > 0 ? "YES" : "NO");
         }
         
         // Check destination chain
@@ -809,7 +783,7 @@ contract WireOApp is Script {
 
     /// @notice Pre-flight check to analyze what needs to be configured
     function preflightCheck(PathwayConfig[] memory pathways) internal returns (uint256 needsConfig) {
-        console.log("\n  Analyzing configuration status...\n");
+        console.log("\n  Analyzing configuration status...");
         
         uint256 alreadyConfigured = 0;
         
@@ -821,14 +795,6 @@ contract WireOApp is Script {
                 alreadyConfigured++;
             } else {
                 needsConfig++;
-                printAction(
-                    string.concat(
-                        chainName(pathway.srcEid),
-                        " -> ",
-                        chainName(pathway.dstEid),
-                        " needs configuration"
-                    )
-                );
             }
         }
         
@@ -850,107 +816,313 @@ contract WireOApp is Script {
         Deployment memory srcDeployment = deployments[pathway.srcEid];
         Deployment memory dstDeployment = deployments[pathway.dstEid];
         
+        bool fullyConfigured = true;
+        
+        // Check verbosity - use VERBOSE env var
+        bool verbose = vm.envOr("VERBOSE", false);
+        
+        console.log(string.concat("\n  Checking: ", chainName(pathway.srcEid), " -> ", chainName(pathway.dstEid)));
+        
+        if (verbose) {
+            console.log("  Source Configuration:");
+        }
+        
         // Check source chain
         vm.createSelectFork(eidToRpc[pathway.srcEid]);
         ILayerZeroEndpointV2 srcEndpoint = ILayerZeroEndpointV2(srcDeployment.endpointV2.addr);
         
         // Check send library
         address srcSendLib = srcEndpoint.getSendLibrary(pathway.srcOApp, pathway.dstEid);
-        if (srcSendLib != srcDeployment.sendUln302.addr) return false;
+        bool sendLibMatch = srcSendLib == srcDeployment.sendUln302.addr;
+        if (verbose || !sendLibMatch) {
+            console.log("    Send Library:");
+            console.log(string.concat("      Current:  ", vm.toString(srcSendLib)));
+            console.log(string.concat("      Expected: ", vm.toString(srcDeployment.sendUln302.addr)));
+            if (!sendLibMatch) {
+                console.log("      [MISMATCH]");
+            }
+        }
+        if (!sendLibMatch) fullyConfigured = false;
         
         // Check peer
         bytes32 srcPeer = IOAppCore(pathway.srcOApp).peers(pathway.dstEid);
-        if (srcPeer != bytes32(uint256(uint160(pathway.dstOApp)))) return false;
+        bytes32 expectedSrcPeer = bytes32(uint256(uint160(pathway.dstOApp)));
+        bool peerMatch = srcPeer == expectedSrcPeer;
+        if (verbose || !peerMatch) {
+            console.log("    Peer:");
+            console.log(string.concat("      Current:  ", vm.toString(srcPeer)));
+            console.log(string.concat("      Expected: ", vm.toString(expectedSrcPeer)));
+            if (!peerMatch) {
+                console.log("      [MISMATCH]");
+            }
+        }
+        if (!peerMatch) fullyConfigured = false;
         
         // Check send ULN configuration
+        bool ulnMatch = true;
         try srcEndpoint.getConfig(pathway.srcOApp, srcSendLib, pathway.dstEid, ULN_CONFIG_TYPE) returns (bytes memory currentUlnConfig) {
-            if (currentUlnConfig.length == 0) return false;
-            
-            UlnConfig memory currentUln = abi.decode(currentUlnConfig, (UlnConfig));
-            UlnConfig memory expectedUln = UlnConfig({
-                confirmations: pathway.confirmations,
-                requiredDVNCount: pathway.requiredDVNCount,
-                optionalDVNCount: uint8(pathway.srcOptionalDVNs.length),
-                optionalDVNThreshold: pathway.optionalDVNThreshold,
-                requiredDVNs: pathway.srcRequiredDVNs,
-                optionalDVNs: pathway.srcOptionalDVNs
-            });
-            
-            if (!isUlnConfigEqual(currentUln, expectedUln)) return false;
+            if (currentUlnConfig.length == 0) {
+                ulnMatch = false;
+                if (verbose || !ulnMatch) {
+                    console.log("    ULN Config:");
+                    console.log("      Current:  Not configured");
+                    console.log(string.concat("      Expected: Confirmations=", vm.toString(pathway.confirmations), 
+                                             ", RequiredDVNs=", vm.toString(pathway.requiredDVNCount),
+                                             ", OptionalDVNs=", vm.toString(pathway.srcOptionalDVNs.length)));
+                    console.log("      [MISMATCH]");
+                }
+            } else {
+                UlnConfig memory currentUln = abi.decode(currentUlnConfig, (UlnConfig));
+                UlnConfig memory expectedUln = UlnConfig({
+                    confirmations: pathway.confirmations,
+                    requiredDVNCount: pathway.requiredDVNCount,
+                    optionalDVNCount: uint8(pathway.srcOptionalDVNs.length),
+                    optionalDVNThreshold: pathway.optionalDVNThreshold,
+                    requiredDVNs: pathway.srcRequiredDVNs,
+                    optionalDVNs: pathway.srcOptionalDVNs
+                });
+                
+                ulnMatch = isUlnConfigEqual(currentUln, expectedUln);
+                
+                if (verbose || !ulnMatch) {
+                    console.log("    ULN Config:");
+                    console.log(string.concat("      Confirmations: ", vm.toString(currentUln.confirmations), " (expected: ", vm.toString(expectedUln.confirmations), ")"));
+                    console.log(string.concat("      Required DVNs: ", vm.toString(currentUln.requiredDVNCount), " (expected: ", vm.toString(expectedUln.requiredDVNCount), ")"));
+                    console.log(string.concat("      Optional DVNs: ", vm.toString(currentUln.optionalDVNCount), 
+                                             " threshold=", vm.toString(currentUln.optionalDVNThreshold),
+                                             " (expected: ", vm.toString(expectedUln.optionalDVNCount), 
+                                             " threshold=", vm.toString(expectedUln.optionalDVNThreshold), ")"));
+                    
+                    // Show DVN addresses if they differ
+                    if (!areAddressArraysEqual(currentUln.requiredDVNs, expectedUln.requiredDVNs)) {
+                        console.log("      Required DVN addresses:");
+                        for (uint256 i = 0; i < currentUln.requiredDVNs.length; i++) {
+                            console.log(string.concat("        Current[", vm.toString(i), "]:  ", vm.toString(currentUln.requiredDVNs[i])));
+                        }
+                        for (uint256 i = 0; i < expectedUln.requiredDVNs.length; i++) {
+                            console.log(string.concat("        Expected[", vm.toString(i), "]: ", vm.toString(expectedUln.requiredDVNs[i])));
+                        }
+                    }
+                    
+                    if (!ulnMatch) {
+                        console.log("      [MISMATCH]");
+                    }
+                }
+            }
         } catch {
-            return false;
+            ulnMatch = false;
+            if (verbose || !ulnMatch) {
+                console.log("    ULN Config:");
+                console.log("      Current:  Failed to read");
+                console.log("      [ERROR]");
+            }
         }
+        if (!ulnMatch) fullyConfigured = false;
         
         // Check executor configuration
+        bool execMatch = true;
         try srcEndpoint.getConfig(pathway.srcOApp, srcSendLib, pathway.dstEid, EXECUTOR_CONFIG_TYPE) returns (bytes memory currentExecConfig) {
-            if (currentExecConfig.length == 0) return false;
-            
-            ExecutorConfig memory currentExec = abi.decode(currentExecConfig, (ExecutorConfig));
-            if (currentExec.maxMessageSize != pathway.maxMessageSize || 
-                currentExec.executor != srcDeployment.executor.addr) return false;
+            if (currentExecConfig.length == 0) {
+                execMatch = false;
+                if (verbose || !execMatch) {
+                    console.log("    Executor Config:");
+                    console.log("      Current:  Not configured");
+                    console.log(string.concat("      Expected: MaxMessageSize=", vm.toString(pathway.maxMessageSize), 
+                                             ", Executor=", vm.toString(srcDeployment.executor.addr)));
+                    console.log("      [MISMATCH]");
+                }
+            } else {
+                ExecutorConfig memory currentExec = abi.decode(currentExecConfig, (ExecutorConfig));
+                execMatch = (currentExec.maxMessageSize == pathway.maxMessageSize && currentExec.executor == srcDeployment.executor.addr);
+                
+                if (verbose || !execMatch) {
+                    console.log("    Executor Config:");
+                    console.log(string.concat("      Max Message Size: ", vm.toString(currentExec.maxMessageSize), " (expected: ", vm.toString(pathway.maxMessageSize), ")"));
+                    console.log(string.concat("      Executor: ", vm.toString(currentExec.executor), " (expected: ", vm.toString(srcDeployment.executor.addr), ")"));
+                    
+                    if (!execMatch) {
+                        console.log("      [MISMATCH]");
+                    }
+                }
+            }
         } catch {
-            return false;
+            execMatch = false;
+            if (verbose || !execMatch) {
+                console.log("    Executor Config:");
+                console.log("      Current:  Failed to read");
+                console.log("      [ERROR]");
+            }
         }
+        if (!execMatch) fullyConfigured = false;
         
         // Check enforced options on source OApp
-        if (pathway.enforcedOptions.lzReceiveGas > 0) {
-            bytes memory expectedOptions = OptionsBuilder.newOptions()
-                .addExecutorLzReceiveOption(pathway.enforcedOptions.lzReceiveGas, pathway.enforcedOptions.lzReceiveValue);
+        for (uint256 i = 0; i < pathway.enforcedOptions.length; i++) {
+            EnforcedOptions memory opt = pathway.enforcedOptions[i];
             
-            // Add native drop if specified
-            if (pathway.enforcedOptions.lzNativeDropAmount > 0 && pathway.enforcedOptions.lzNativeDropRecipient != address(0)) {
-                expectedOptions = OptionsBuilder.addExecutorNativeDropOption(
+            // Build expected options based on what's actually set
+            bytes memory expectedOptions = OptionsBuilder.newOptions();
+            
+            // Add lzReceive option if gas is specified
+            if (opt.lzReceiveGas > 0) {
+                expectedOptions = OptionsBuilder.addExecutorLzReceiveOption(
                     expectedOptions,
-                    pathway.enforcedOptions.lzNativeDropAmount,
-                    bytes32(uint256(uint160(pathway.enforcedOptions.lzNativeDropRecipient)))
+                    opt.lzReceiveGas,
+                    opt.lzReceiveValue
                 );
             }
             
-            bytes memory currentOptions = IOAppWithEnforcedOptions(pathway.srcOApp).enforcedOptions(pathway.dstEid, MSG_TYPE_STANDARD);
-            if (!areOptionsEqual(currentOptions, expectedOptions)) return false;
-        }
-        
-        // Check composed message enforced options if configured
-        if (pathway.enforcedOptions.lzComposeGas > 0) {
-            bytes memory expectedOptions = OptionsBuilder.newOptions()
-                .addExecutorLzComposeOption(pathway.enforcedOptions.lzComposeIndex, pathway.enforcedOptions.lzComposeGas, 0);
+            // Add lzCompose option if gas is specified
+            if (opt.lzComposeGas > 0) {
+                expectedOptions = OptionsBuilder.addExecutorLzComposeOption(
+                    expectedOptions,
+                    opt.lzComposeIndex,
+                    opt.lzComposeGas,
+                    0
+                );
+            }
+            
+            // Add native drop if specified
+            if (opt.lzNativeDropAmount > 0 && opt.lzNativeDropRecipient != address(0)) {
+                expectedOptions = OptionsBuilder.addExecutorNativeDropOption(
+                    expectedOptions,
+                    opt.lzNativeDropAmount,
+                    bytes32(uint256(uint160(opt.lzNativeDropRecipient)))
+                );
+            }
+            
+            // Skip if no options were actually added
+            if (expectedOptions.length == 1) {
+                continue;
+            }
+            
+            bytes memory currentOptions = IOAppWithEnforcedOptions(pathway.srcOApp).enforcedOptions(pathway.dstEid, opt.msgType);
+            bool optMatch = areOptionsEqual(currentOptions, expectedOptions);
+            
+            if (verbose || !optMatch) {
+                console.log(string.concat("    Enforced Options (msgType ", vm.toString(opt.msgType), "):"));
+                console.log(string.concat("      Current:  ", vm.toString(currentOptions.length), " bytes"));
+                console.log(string.concat("      Expected: ", vm.toString(expectedOptions.length), " bytes"));
                 
-            bytes memory currentOptions = IOAppWithEnforcedOptions(pathway.srcOApp).enforcedOptions(pathway.dstEid, MSG_TYPE_COMPOSED);
-            if (!areOptionsEqual(currentOptions, expectedOptions)) return false;
+                if (opt.lzReceiveGas > 0) {
+                    console.log(string.concat("      Expected lzReceiveGas: ", vm.toString(opt.lzReceiveGas)));
+                }
+                if (opt.lzComposeGas > 0) {
+                    console.log(string.concat("      Expected lzComposeGas: ", vm.toString(opt.lzComposeGas)));
+                }
+                if (opt.lzNativeDropAmount > 0) {
+                    console.log(string.concat("      Expected nativeDrop: ", vm.toString(opt.lzNativeDropAmount), " to ", vm.toString(opt.lzNativeDropRecipient)));
+                }
+                
+                if (!optMatch) {
+                    console.log("      [MISMATCH]");
+                }
+            }
+            
+            if (!optMatch) fullyConfigured = false;
         }
         
         // Check destination chain
+        if (verbose) {
+            console.log("\n  Destination Configuration:");
+        }
         vm.createSelectFork(eidToRpc[pathway.dstEid]);
         ILayerZeroEndpointV2 dstEndpoint = ILayerZeroEndpointV2(dstDeployment.endpointV2.addr);
         
         // Check receive library
         (address dstReceiveLib, ) = dstEndpoint.getReceiveLibrary(pathway.dstOApp, pathway.srcEid);
-        if (dstReceiveLib != dstDeployment.receiveUln302.addr) return false;
+        bool recvLibMatch = dstReceiveLib == dstDeployment.receiveUln302.addr;
+        if (verbose || !recvLibMatch) {
+            console.log("    Receive Library:");
+            console.log(string.concat("      Current:  ", vm.toString(dstReceiveLib)));
+            console.log(string.concat("      Expected: ", vm.toString(dstDeployment.receiveUln302.addr)));
+            if (!recvLibMatch) {
+                console.log("      [MISMATCH]");
+            }
+        }
+        if (!recvLibMatch) fullyConfigured = false;
         
         // Check peer
         bytes32 dstPeer = IOAppCore(pathway.dstOApp).peers(pathway.srcEid);
-        if (dstPeer != bytes32(uint256(uint160(pathway.srcOApp)))) return false;
+        bytes32 expectedDstPeer = bytes32(uint256(uint160(pathway.srcOApp)));
+        bool dstPeerMatch = dstPeer == expectedDstPeer;
+        if (verbose || !dstPeerMatch) {
+            console.log("    Peer:");
+            console.log(string.concat("      Current:  ", vm.toString(dstPeer)));
+            console.log(string.concat("      Expected: ", vm.toString(expectedDstPeer)));
+            if (!dstPeerMatch) {
+                console.log("      [MISMATCH]");
+            }
+        }
+        if (!dstPeerMatch) fullyConfigured = false;
         
         // Check receive ULN configuration
+        bool dstUlnMatch = true;
         try dstEndpoint.getConfig(pathway.dstOApp, dstReceiveLib, pathway.srcEid, ULN_CONFIG_TYPE) returns (bytes memory currentUlnConfig) {
-            if (currentUlnConfig.length == 0) return false;
-            
-            UlnConfig memory currentUln = abi.decode(currentUlnConfig, (UlnConfig));
-            UlnConfig memory expectedUln = UlnConfig({
-                confirmations: pathway.confirmations,
-                requiredDVNCount: pathway.requiredDVNCount,
-                optionalDVNCount: uint8(pathway.dstOptionalDVNs.length),
-                optionalDVNThreshold: pathway.optionalDVNThreshold,
-                requiredDVNs: pathway.dstRequiredDVNs,
-                optionalDVNs: pathway.dstOptionalDVNs
-            });
-            
-            if (!isUlnConfigEqual(currentUln, expectedUln)) return false;
+            if (currentUlnConfig.length == 0) {
+                dstUlnMatch = false;
+                if (verbose || !dstUlnMatch) {
+                    console.log("    ULN Config:");
+                    console.log("      Current:  Not configured");
+                    console.log(string.concat("      Expected: Confirmations=", vm.toString(pathway.confirmations), 
+                                             ", RequiredDVNs=", vm.toString(pathway.requiredDVNCount),
+                                             ", OptionalDVNs=", vm.toString(pathway.dstOptionalDVNs.length)));
+                    console.log("      [MISMATCH]");
+                }
+            } else {
+                UlnConfig memory currentUln = abi.decode(currentUlnConfig, (UlnConfig));
+                UlnConfig memory expectedUln = UlnConfig({
+                    confirmations: pathway.confirmations,
+                    requiredDVNCount: pathway.requiredDVNCount,
+                    optionalDVNCount: uint8(pathway.dstOptionalDVNs.length),
+                    optionalDVNThreshold: pathway.optionalDVNThreshold,
+                    requiredDVNs: pathway.dstRequiredDVNs,
+                    optionalDVNs: pathway.dstOptionalDVNs
+                });
+                
+                dstUlnMatch = isUlnConfigEqual(currentUln, expectedUln);
+                
+                if (verbose || !dstUlnMatch) {
+                    console.log("    ULN Config:");
+                    console.log(string.concat("      Confirmations: ", vm.toString(currentUln.confirmations), " (expected: ", vm.toString(expectedUln.confirmations), ")"));
+                    console.log(string.concat("      Required DVNs: ", vm.toString(currentUln.requiredDVNCount), " (expected: ", vm.toString(expectedUln.requiredDVNCount), ")"));
+                    console.log(string.concat("      Optional DVNs: ", vm.toString(currentUln.optionalDVNCount), 
+                                             " threshold=", vm.toString(currentUln.optionalDVNThreshold),
+                                             " (expected: ", vm.toString(expectedUln.optionalDVNCount), 
+                                             " threshold=", vm.toString(expectedUln.optionalDVNThreshold), ")"));
+                    
+                    // Show DVN addresses if they differ
+                    if (!areAddressArraysEqual(currentUln.requiredDVNs, expectedUln.requiredDVNs)) {
+                        console.log("      Required DVN addresses:");
+                        for (uint256 i = 0; i < currentUln.requiredDVNs.length; i++) {
+                            console.log(string.concat("        Current[", vm.toString(i), "]:  ", vm.toString(currentUln.requiredDVNs[i])));
+                        }
+                        for (uint256 i = 0; i < expectedUln.requiredDVNs.length; i++) {
+                            console.log(string.concat("        Expected[", vm.toString(i), "]: ", vm.toString(expectedUln.requiredDVNs[i])));
+                        }
+                    }
+                    
+                    if (!dstUlnMatch) {
+                        console.log("      [MISMATCH]");
+                    }
+                }
+            }
         } catch {
-            return false;
+            dstUlnMatch = false;
+            if (verbose || !dstUlnMatch) {
+                console.log("    ULN Config:");
+                console.log("      Current:  Failed to read");
+                console.log("      [ERROR]");
+            }
+        }
+        if (!dstUlnMatch) fullyConfigured = false;
+        
+        if (fullyConfigured) {
+            console.log("    [OK] Fully configured");
+        } else {
+            console.log("    [NEEDS CONFIG] Requires configuration");
         }
         
-        return true;
+        return fullyConfigured;
     }
 
     // ============================================
@@ -1167,24 +1339,100 @@ contract WireOApp is Script {
             raw.confirmations[i] = uint64(vm.parseJsonUint(json, string.concat(basePath, ".confirmations[", vm.toString(i), "]")));
         }
         
-        // Parse enforced options array
+        // Parse enforced options array of arrays
         uint256 enforcedOptionsCount = 0;
-        while (true) {
-            try vm.parseJsonUint(json, string.concat(basePath, ".enforcedOptions[", vm.toString(enforcedOptionsCount), "].lzReceiveGas")) returns (uint256) {
-                enforcedOptionsCount++;
+        bool isOldFormat = false;
+        
+        // First, try to detect the format
+        try vm.parseJsonUint(json, string.concat(basePath, ".enforcedOptions[0][0].lzReceiveGas")) returns (uint256) {
+            // New format: array of arrays
+            while (true) {
+                try vm.parseJsonUint(json, string.concat(basePath, ".enforcedOptions[", vm.toString(enforcedOptionsCount), "][0].lzReceiveGas")) returns (uint256) {
+                    enforcedOptionsCount++;
+                } catch {
+                    break;
+                }
+            }
+        } catch {
+            // Try old format: single array
+            try vm.parseJsonUint(json, string.concat(basePath, ".enforcedOptions[0].lzReceiveGas")) returns (uint256) {
+                isOldFormat = true;
+                // Count options in old format
+                while (true) {
+                    try vm.parseJsonUint(json, string.concat(basePath, ".enforcedOptions[", vm.toString(enforcedOptionsCount), "].lzReceiveGas")) returns (uint256) {
+                        enforcedOptionsCount++;
+                    } catch {
+                        break;
+                    }
+                }
             } catch {
-                break;
+                // No enforced options
             }
         }
-        raw.enforcedOptions = new EnforcedOptions[](enforcedOptionsCount);
-        for (uint256 i = 0; i < enforcedOptionsCount; i++) {
-            string memory optPath = string.concat(basePath, ".enforcedOptions[", vm.toString(i), "]");
-            raw.enforcedOptions[i].lzReceiveGas = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveGas")));
-            raw.enforcedOptions[i].lzReceiveValue = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveValue")));
-            raw.enforcedOptions[i].lzComposeGas = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeGas")));
-            raw.enforcedOptions[i].lzComposeIndex = uint16(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeIndex")));
-            raw.enforcedOptions[i].lzNativeDropAmount = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzNativeDropAmount")));
-            raw.enforcedOptions[i].lzNativeDropRecipient = vm.parseJsonAddress(json, string.concat(optPath, ".lzNativeDropRecipient"));
+        
+        if (isOldFormat) {
+            // Old format: convert single array to array of arrays
+            raw.enforcedOptions = new EnforcedOptions[][](1);
+            raw.enforcedOptions[0] = new EnforcedOptions[](enforcedOptionsCount);
+            
+            for (uint256 i = 0; i < enforcedOptionsCount; i++) {
+                string memory optPath = string.concat(basePath, ".enforcedOptions[", vm.toString(i), "]");
+                
+                // Try to parse msgType, default to standard message if not specified
+                uint16 msgType;
+                try vm.parseJsonUint(json, string.concat(optPath, ".msgType")) returns (uint256 mt) {
+                    msgType = uint16(mt);
+                } catch {
+                    // Default to standard message for backward compatibility
+                    msgType = MSG_TYPE_STANDARD;
+                }
+                
+                raw.enforcedOptions[0][i].msgType = msgType;
+                raw.enforcedOptions[0][i].lzReceiveGas = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveGas")));
+                raw.enforcedOptions[0][i].lzReceiveValue = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveValue")));
+                raw.enforcedOptions[0][i].lzComposeGas = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeGas")));
+                raw.enforcedOptions[0][i].lzComposeIndex = uint16(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeIndex")));
+                raw.enforcedOptions[0][i].lzNativeDropAmount = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzNativeDropAmount")));
+                raw.enforcedOptions[0][i].lzNativeDropRecipient = vm.parseJsonAddress(json, string.concat(optPath, ".lzNativeDropRecipient"));
+            }
+        } else {
+            // New format: array of arrays
+            raw.enforcedOptions = new EnforcedOptions[][](enforcedOptionsCount);
+            
+            for (uint256 i = 0; i < enforcedOptionsCount; i++) {
+                // Count options in this direction
+                uint256 optionCount = 0;
+                while (true) {
+                    try vm.parseJsonUint(json, string.concat(basePath, ".enforcedOptions[", vm.toString(i), "][", vm.toString(optionCount), "].lzReceiveGas")) returns (uint256) {
+                        optionCount++;
+                    } catch {
+                        break;
+                    }
+                }
+                
+                raw.enforcedOptions[i] = new EnforcedOptions[](optionCount);
+                
+                for (uint256 j = 0; j < optionCount; j++) {
+                    string memory optPath = string.concat(basePath, ".enforcedOptions[", vm.toString(i), "][", vm.toString(j), "]");
+                    
+                    // Try to parse msgType, default to standard message if not specified
+                    uint16 msgType;
+                    try vm.parseJsonUint(json, string.concat(optPath, ".msgType")) returns (uint256 mt) {
+                        msgType = uint16(mt);
+                    } catch {
+                        // Default to standard message for backward compatibility
+                        msgType = MSG_TYPE_STANDARD;
+                    }
+                    
+                    raw.enforcedOptions[i][j].msgType = msgType;
+                    raw.enforcedOptions[i][j].lzReceiveGas = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveGas")));
+                    raw.enforcedOptions[i][j].lzReceiveValue = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveValue")));
+                    raw.enforcedOptions[i][j].lzComposeGas = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeGas")));
+                    raw.enforcedOptions[i][j].lzComposeIndex = uint16(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeIndex")));
+                    raw.enforcedOptions[i][j].lzNativeDropAmount = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzNativeDropAmount")));
+                    raw.enforcedOptions[i][j].lzNativeDropRecipient = vm.parseJsonAddress(json, string.concat(optPath, ".lzNativeDropRecipient"));
+                }
+            }
         }
         
         return raw;
@@ -1202,20 +1450,26 @@ contract WireOApp is Script {
         pathway.dstEid = toChain.eid;
         pathway.srcOApp = fromChain.oapp;
         pathway.dstOApp = toChain.oapp;
-        // Use first element for A->B confirmations
-        // This value is used for both source send config and destination receive config
         pathway.confirmations = raw.confirmations.length > 0 ? raw.confirmations[0] : 15;
         pathway.optionalDVNThreshold = raw.optionalDVNThreshold;
         pathway.maxMessageSize = raw.maxMessageSize;
-        // Use first element for A->B enforced options
-        pathway.enforcedOptions = raw.enforcedOptions.length > 0 ? raw.enforcedOptions[0] : EnforcedOptions({
-            lzReceiveGas: 200000,
-            lzReceiveValue: 0,
-            lzComposeGas: 0,
-            lzComposeIndex: 0,
-            lzNativeDropAmount: 0,
-            lzNativeDropRecipient: address(0)
-        });
+        
+        // Use first set of enforced options for A->B
+        if (raw.enforcedOptions.length > 0 && raw.enforcedOptions[0].length > 0) {
+            pathway.enforcedOptions = raw.enforcedOptions[0];
+        } else {
+            // Default if no options specified
+            pathway.enforcedOptions = new EnforcedOptions[](1);
+            pathway.enforcedOptions[0] = EnforcedOptions({
+                msgType: MSG_TYPE_STANDARD,
+                lzReceiveGas: 200000,
+                lzReceiveValue: 0,
+                lzComposeGas: 0,
+                lzComposeIndex: 0,
+                lzNativeDropAmount: 0,
+                lzNativeDropRecipient: address(0)
+            });
+        }
         
         // Resolve required DVN names to addresses for SOURCE chain (for send config)
         pathway.srcRequiredDVNs = new address[](raw.requiredDVNs.length);
@@ -1285,16 +1539,27 @@ contract WireOApp is Script {
                                (raw.confirmations.length > 0 ? raw.confirmations[0] : 15);
         pathway.optionalDVNThreshold = raw.optionalDVNThreshold;
         pathway.maxMessageSize = raw.maxMessageSize;
-        // Use second element for B->A enforced options, or first if only one provided
-        pathway.enforcedOptions = raw.enforcedOptions.length > 1 ? raw.enforcedOptions[1] : 
-                                 (raw.enforcedOptions.length > 0 ? raw.enforcedOptions[0] : EnforcedOptions({
-            lzReceiveGas: 200000,
-            lzReceiveValue: 0,
-            lzComposeGas: 0,
-            lzComposeIndex: 0,
-            lzNativeDropAmount: 0,
-            lzNativeDropRecipient: address(0)
-        }));
+        
+        // Use second set of enforced options for B->A, or first if only one provided
+        if (raw.enforcedOptions.length > 1 && raw.enforcedOptions[1].length > 0) {
+            // Use B->A specific options
+            pathway.enforcedOptions = raw.enforcedOptions[1];
+        } else if (raw.enforcedOptions.length > 0 && raw.enforcedOptions[0].length > 0) {
+            // Use same options as A->B
+            pathway.enforcedOptions = raw.enforcedOptions[0];
+        } else {
+            // Default if no options specified
+            pathway.enforcedOptions = new EnforcedOptions[](1);
+            pathway.enforcedOptions[0] = EnforcedOptions({
+                msgType: MSG_TYPE_STANDARD,
+                lzReceiveGas: 200000,
+                lzReceiveValue: 0,
+                lzComposeGas: 0,
+                lzComposeIndex: 0,
+                lzNativeDropAmount: 0,
+                lzNativeDropRecipient: address(0)
+            });
+        }
         
         // Resolve required DVN names to addresses for SOURCE chain (for send config)
         pathway.srcRequiredDVNs = new address[](raw.requiredDVNs.length);
@@ -1528,6 +1793,19 @@ contract WireOApp is Script {
     
     /// @notice Compare two bytes arrays for equality
     function areOptionsEqual(bytes memory a, bytes memory b) internal pure returns (bool) {
+        if (a.length != b.length) {
+            return false;
+        }
+        for (uint256 i = 0; i < a.length; i++) {
+            if (a[i] != b[i]) {
+                return false;
+            }
+        }
+        return true;
+    }
+
+    /// @notice Helper function to compare two address arrays for equality
+    function areAddressArraysEqual(address[] memory a, address[] memory b) internal pure returns (bool) {
         if (a.length != b.length) {
             return false;
         }

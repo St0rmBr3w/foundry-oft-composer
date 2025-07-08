@@ -113,6 +113,7 @@ Create `utils/layerzero.config.json`:
       "maxMessageSize": 10000,
       "enforcedOptions": [
         {
+          "msgType": 1,
           "lzReceiveGas": 150000,
           "lzReceiveValue": 0,
           "lzComposeGas": 0,
@@ -174,6 +175,7 @@ Each pathway defines a unidirectional communication channel:
   "maxMessageSize": 10000,                 // Maximum message size in bytes
   "enforcedOptions": [                     // Minimum execution requirements
     {
+      "msgType": 1,
       "lzReceiveGas": 200000,             // Gas for standard messages
       "lzReceiveValue": 0,                // ETH value to send
       "lzComposeGas": 0,                  // Gas for composed messages
@@ -266,6 +268,7 @@ Wire multiple chains with different configurations:
       "confirmations": [15, 10],
       "maxMessageSize": 10000,
       "enforcedOptions": [{
+        "msgType": 1,
         "lzReceiveGas": 250000,
         "lzReceiveValue": 0,
         "lzComposeGas": 0,
@@ -281,6 +284,7 @@ Wire multiple chains with different configurations:
       "confirmations": [15, 3],
       "maxMessageSize": 10000,
       "enforcedOptions": [{
+        "msgType": 1,
         "lzReceiveGas": 150000,
         "lzReceiveValue": 0,
         "lzComposeGas": 0,
