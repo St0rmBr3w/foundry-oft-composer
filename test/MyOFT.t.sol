@@ -64,7 +64,7 @@ contract MyOFTTest is TestHelperOz5 {
         bOFT.mint(userB, initialBalance);
     }
 
-    function test_constructor() public {
+    function test_constructor() public view {
         assertEq(aOFT.owner(), address(this));
         assertEq(bOFT.owner(), address(this));
 

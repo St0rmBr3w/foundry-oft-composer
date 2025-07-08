@@ -61,7 +61,7 @@ This creates:
 
 ### 2. Configure Your Pathways
 
-Create a configuration file (e.g., `wire-config.json`) with your OApp settings:
+Create a configuration file (e.g., `layerzero.config.json`) with your OApp settings:
 
 ```json
 {
@@ -103,7 +103,7 @@ Execute the script with your configuration:
 ```bash
 forge script script/WireOApp.s.sol:WireOApp \
   --sig "run(string,string,string)" \
-  "script/wire-config.json" \
+  "script/layerzero.config.json" \
   "layerzero-deployments.json" \
   "layerzero-dvns.json" \
   --via-ir \

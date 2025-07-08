@@ -52,7 +52,7 @@ Then use in your forge script command:
 ```bash
 forge script script/DeployMyOFT.s.sol:DeployMyOFT \
   --sig "run(string,string)" \
-  "deploy-config.json" \
+  "deploy.config.json" \
   "layerzero-deployments.json" \
   --private-key $PRIVATE_KEY \
   --broadcast
@@ -80,7 +80,7 @@ Use the keystore account in scripts:
 ```bash
 forge script script/DeployMyOFT.s.sol:DeployMyOFT \
   --sig "run(string,string)" \
-  "deploy-config.json" \
+  "deploy.config.json" \
   "layerzero-deployments.json" \
   --account deployer \
   --password-file .password \
@@ -93,7 +93,7 @@ For Ledger:
 ```bash
 forge script script/DeployMyOFT.s.sol:DeployMyOFT \
   --sig "run(string,string)" \
-  "deploy-config.json" \
+  "deploy.config.json" \
   "layerzero-deployments.json" \
   --ledger \
   --hd-paths "m/44'/60'/0'/0/0" \
@@ -106,7 +106,7 @@ You can also input the private key interactively:
 ```bash
 forge script script/DeployMyOFT.s.sol:DeployMyOFT \
   --sig "run(string,string)" \
-  "deploy-config.json" \
+  "deploy.config.json" \
   "layerzero-deployments.json" \
   --interactive \
   --broadcast
@@ -154,7 +154,7 @@ Note: The "deployer" or "signer" address in the config should be the public addr
 ```bash
 forge script script/DeployMyOFT.s.sol:DeployMyOFT \
   --sig "run(string,string)" \
-  "deploy-config.json" \
+  "deploy.config.json" \
   "layerzero-deployments.json" \
   --private-key $DEPLOYER_KEY \
   --via-ir \

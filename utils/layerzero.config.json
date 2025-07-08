@@ -4,13 +4,13 @@
       "eid": 30184,
       "rpc": "https://base.gateway.tenderly.co",
       "signer": "WILL_USE_PRIVATE_KEY",
-      "oapp": "0x520e5A32984b1e378f0A1C478C4cE083275643DC"
+      "oapp": "0xc05F9B8E9871870274c1401E338cBc347D7aEEA9"
     },
     "arbitrum": {
       "eid": 30110,
       "rpc": "https://arbitrum.gateway.tenderly.co",
       "signer": "WILL_USE_PRIVATE_KEY",
-      "oapp": "0xb06C0599e3e4B6CB778755013658Fa75255579e0"
+      "oapp": "0x8212620A9cf35CE25a46fDF6fbC594d3490F2c72"
     }
   },
   "pathways": [

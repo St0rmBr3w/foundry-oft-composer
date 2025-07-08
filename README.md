@@ -62,8 +62,8 @@ cp .env.example .env
 ```
 
 4. **Update configuration files:**
-   - Edit `utils/deploy-config.json` with your token details and chain info
-   - Edit `utils/wire-config.json` with your deployed OApp addresses and pathway settings
+   - Edit `utils/deploy.config.json` with your token details and chain info
+   - Edit `utils/layerzero.config.json` with your deployed OApp addresses and pathway settings
 
 ## Build
 
@@ -78,12 +78,12 @@ Deploy your OFT to multiple chains:
 ```bash
 forge script script/DeployMyOFT.s.sol:DeployMyOFT \
   --sig "run(string)" \
-  "utils/deploy-config.json" \
+  "utils/deploy.config.json" \
   --via-ir --broadcast
 ```
 
 This script:
-- Reads your token configuration from `deploy-config.json`
+- Reads your token configuration from `deploy.config.json`
 - Automatically looks up LayerZero endpoint addresses from downloaded metadata
 - Deploys MyOFT to all specified chains
 - Saves deployment addresses to `deployments/` directory
@@ -97,14 +97,14 @@ Wire LayerZero pathways between your deployed OApps:
 ```bash
 forge script script/WireOApp.s.sol:WireOApp \
   -s "run(string,string,string)" \
-  "./utils/wire-config.json" \
+  "./utils/layerzero.config.json" \
   "./layerzero-deployments.json" \
   "./layerzero-dvns.json" \
   --broadcast --slow --multi -vvv
 ```
 
 This script:
-- Reads your pathway configuration from `wire-config.json`
+- Reads your pathway configuration from `layerzero.config.json`
 - Automatically resolves DVN names to chain-specific addresses from `layerzero-dvns.json`
 - Sets up peers between OApps on different chains
 - Configures security settings (DVNs, confirmations)
@@ -180,7 +180,7 @@ forge test --via-ir -vvv
 ### Adding Other Chains
 
 1. Find chain info in [LayerZero docs](https://docs.layerzero.network/v2/developers/evm/technical-reference/deployed-contracts)
-2. Add to `utils/deploy-config.json` and `utils/wire-config.json`
+2. Add to `utils/deploy.config.json` and `utils/layerzero.config.json`
 3. Ensure you have gas tokens on the new chain
 4. Re-run deploy and wire scripts
 

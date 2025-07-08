@@ -60,7 +60,7 @@ You can find the correct LayerZero endpoint addresses:
 
 ### 1. Prepare Configuration
 
-Create your deployment configuration file (e.g., `deploy-config.json`) with your specific parameters.
+Create your deployment configuration file (e.g., `deploy.config.json`) with your specific parameters.
 
 Example configurations are provided:
 - `deploy-config-base-arbitrum.json` - Mainnet deployment example
@@ -80,7 +80,7 @@ Deploy to all chains in your configuration:
 ```bash
 forge script script/DeployMyOFT.s.sol:DeployMyOFT \
   --sig "run(string)" \
-  "deploy-config.json" \
+  "deploy.config.json" \
   --via-ir \
   --broadcast
 ```

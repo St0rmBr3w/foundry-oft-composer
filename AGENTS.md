@@ -13,8 +13,8 @@ This is a **Foundry-based** example demonstrating LayerZero V2 Omnichain Fungibl
 ## Key Implementation Details
 
 ### Configuration Files
-- **`utils/deploy-config.json`**: Token deployment configuration using chain names
-- **`utils/wire-config.json`**: Pathway wiring configuration using chain names
+- **`utils/deploy.config.json`**: Token deployment configuration using chain names
+- **`utils/layerzero.config.json`**: Pathway wiring configuration using chain names
 - **`layerzero-deployments.json`**: Downloaded LayerZero contract addresses
 - **`layerzero-dvns.json`**: Downloaded DVN metadata
 
@@ -117,7 +117,7 @@ printError("Required DVN not found");
 CHECK_ONLY=true forge script script/WireOApp.s.sol:WireOApp ...
 
 # Validate JSON structure
-jq . utils/wire-config.json
+jq . utils/layerzero.config.json
 
 # Check script compilation
 forge build --via-ir

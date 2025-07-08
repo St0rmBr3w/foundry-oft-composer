@@ -14,296 +14,340 @@ Automatically configure LayerZero pathways between deployed OApps using deployme
 
 ## Table of Contents
 
-- [Prerequisite Knowledge](#prerequisite-knowledge)
-- [Requirements](#requirements)
-- [Setup](#setup)
-- [Basic Usage](#basic-usage)
+- [What is Pathway Wiring?](#what-is-pathway-wiring)
+- [How the Script Works](#how-the-script-works)
+- [Quick Start](#quick-start)
 - [Configuration](#configuration)
-- [DVN Configuration](#dvn-configuration)
-- [Troubleshooting](#troubleshooting)
 - [Advanced Usage](#advanced-usage)
+- [Troubleshooting](#troubleshooting)
 
-## Prerequisite Knowledge
+## What is Pathway Wiring?
 
-Before using this script, understand:
-- **[LayerZero Pathways](https://docs.layerzero.network/v2/home/glossary#pathway)** - Directional connections between OApps
-- **[DVNs](https://docs.layerzero.network/v2/home/glossary#data-validation-network-dvn)** - Security modules that verify cross-chain messages
-- **[Endpoint IDs](https://docs.layerzero.network/v2/home/glossary#endpoint-id)** - Unique identifiers for each blockchain
+In LayerZero V2, before two OApps can communicate across chains, you must establish a "pathway" between them. This involves configuring multiple components on both the source and destination chains:
 
-## Requirements
+### On the Source Chain:
+1. **Send Library**: Tells the OApp which library to use for sending messages
+2. **Peer**: Establishes trust by setting the destination OApp address
+3. **DVN Configuration**: Sets up security validators for outgoing messages
+4. **Executor Configuration**: Configures who will execute messages on the destination
+5. **Enforced Options**: Sets minimum gas requirements for message execution
+
+### On the Destination Chain:
+1. **Receive Library**: Tells the OApp which library to use for receiving messages
+2. **Peer**: Establishes trust by setting the source OApp address
+3. **DVN Configuration**: Sets up security validators for incoming messages
+
+## How the Script Works
+
+The script follows this flow:
+
+```
+1. Read Configuration
+   ├── Parse your layerzero.config.json
+   ├── Load LayerZero deployment contracts
+   └── Load DVN metadata
+
+2. Validation Phase
+   ├── Check current configuration status
+   ├── Identify what needs to be configured
+   └── Display summary
+
+3. Configuration Phase (if not in check-only mode)
+   ├── For each pathway that needs configuration:
+   │   ├── Configure Source Chain
+   │   │   ├── setSendLibrary()
+   │   │   ├── setPeer()
+   │   │   ├── setEnforcedOptions()
+   │   │   └── setConfig() for DVNs and Executor
+   │   └── Configure Destination Chain
+   │       ├── setReceiveLibrary()
+   │       ├── setPeer()
+   │       └── setConfig() for DVNs
+   └── Report success
+```
+
+## Quick Start
+
+### 1. Prerequisites
 
 - Deployed OApp contracts on source and destination chains
-- LayerZero deployment metadata (`layerzero-deployments.json`)
-- DVN configuration file (`layerzero-dvns.json`)
 - Private key with ownership of the OApp contracts
+- RPC URLs for each chain
 
-## Setup
+### 2. Download LayerZero Metadata
 
-1. **Download LayerZero metadata**:
-   ```bash
-   # Mainnet deployments
-   curl -o layerzero-deployments.json https://raw.githubusercontent.com/LayerZero-Labs/devtools/main/packages/ua-utils-evm-hardhat/layerzero.mainnet.json
-   
-   # DVN addresses
-   curl -o layerzero-dvns.json https://raw.githubusercontent.com/LayerZero-Labs/layerzero-scan-api/main/deployments/mainnet/dvn.json
-   ```
+```bash
+# Mainnet deployments
+curl -o layerzero-deployments.json https://raw.githubusercontent.com/LayerZero-Labs/devtools/main/packages/ua-utils-evm-hardhat/layerzero.mainnet.json
 
-2. **Create wire configuration** (`utils/wire-config.json`):
-   ```json
-   {
-     "chains": {
-       "base": {
-         "eid": 30184,
-         "rpc": "https://base.gateway.tenderly.co",
-         "signer": "WILL_USE_PRIVATE_KEY",
-         "oapp": "0xYourOAppOnBase"
-       },
-       "arbitrum": {
-         "eid": 30110,
-         "rpc": "https://arbitrum.gateway.tenderly.co",
-         "signer": "WILL_USE_PRIVATE_KEY",
-         "oapp": "0xYourOAppOnArbitrum"
-       }
-     },
-     "pathways": [
-       {
-         "from": "base",
-         "to": "arbitrum",
-         "requiredDVNs": ["LayerZero Labs"],
-         "optionalDVNs": [],
-         "optionalDVNThreshold": 0,
-         "confirmations": [3, 5],
-         "maxMessageSize": 10000,
-         "enforcedOptions": [
-           {
-             "lzReceiveGas": 150000,
-             "lzReceiveValue": 0,
-             "lzComposeGas": 0,
-             "lzComposeIndex": 0,
-             "lzNativeDropAmount": 0,
-             "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
-           },
-           {
-             "lzReceiveGas": 180000,
-             "lzReceiveValue": 0,
-             "lzComposeGas": 0,
-             "lzComposeIndex": 0,
-             "lzNativeDropAmount": 0,
-             "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
-           }
-         ]
-       }
-     ],
-     "bidirectional": true
-   }
-   ```
+# DVN addresses
+curl -o layerzero-dvns.json https://raw.githubusercontent.com/LayerZero-Labs/layerzero-scan-api/main/deployments/mainnet/dvn.json
+```
 
-## Basic Usage
+### 3. Create Configuration
 
-Wire OApp pathways:
+Create `utils/layerzero.config.json`:
+
+```json
+{
+  "chains": {
+    "base": {
+      "eid": 30184,
+      "rpc": "https://base.gateway.tenderly.co",
+      "oapp": "0xYourOAppOnBase"
+    },
+    "arbitrum": {
+      "eid": 30110,
+      "rpc": "https://arbitrum.gateway.tenderly.co",
+      "oapp": "0xYourOAppOnArbitrum"
+    }
+  },
+  "pathways": [
+    {
+      "from": "base",
+      "to": "arbitrum",
+      "requiredDVNs": ["LayerZero Labs"],
+      "optionalDVNs": [],
+      "optionalDVNThreshold": 0,
+      "confirmations": [3, 5],
+      "maxMessageSize": 10000,
+      "enforcedOptions": [
+        {
+          "lzReceiveGas": 150000,
+          "lzReceiveValue": 0,
+          "lzComposeGas": 0,
+          "lzComposeIndex": 0,
+          "lzNativeDropAmount": 0,
+          "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+        }
+      ]
+    }
+  ],
+  "bidirectional": true
+}
+```
+
+### 4. Check Configuration Status
+
+```bash
+export PRIVATE_KEY=your_private_key_here
+CHECK_ONLY=true forge script script/WireOApp.s.sol:WireOApp \
+  -s "run(string,string,string)" \
+  "./utils/layerzero.config.json" \
+  "./layerzero-deployments.json" \
+  "./layerzero-dvns.json" \
+  --via-ir -vvv
+```
+
+### 5. Wire the Pathways
 
 ```bash
 forge script script/WireOApp.s.sol:WireOApp \
   -s "run(string,string,string)" \
-  "./utils/wire-config.json" \
+  "./utils/layerzero.config.json" \
   "./layerzero-deployments.json" \
   "./layerzero-dvns.json" \
-  --broadcast --slow --multi -vvv
-```
-
-Check existing configuration (dry run):
-
-```bash
-CHECK_ONLY=true forge script script/WireOApp.s.sol:WireOApp \
-  -s "run(string,string,string)" \
-  "./utils/wire-config.json" \
-  "./layerzero-deployments.json" \
-  "./layerzero-dvns.json" \
-  -vvv
+  --via-ir --broadcast --multi -vvv
 ```
 
 ## Configuration
 
 ### Chain Configuration
 
-Each chain in the config file supports:
-
-- **`eid`**: [Endpoint ID](https://docs.layerzero.network/v2/home/glossary#endpoint-id) for the chain
+Each chain requires:
+- **`eid`**: LayerZero endpoint ID ([see full list](https://docs.layerzero.network/v2/developers/evm/technical-reference/deployed-contracts))
 - **`rpc`**: RPC URL for the chain
-- **`signer`**: Set to "WILL_USE_PRIVATE_KEY" to use environment variable
-- **`oapp`**: Deployed OApp contract address on this chain
+- **`oapp`**: Your deployed OApp contract address
 
 ### Pathway Configuration
 
-Each pathway supports:
-
-- **`from`/`to`**: Chain names (must match keys in `chains` section)
-- **`requiredDVNs`**: Array of DVN names that must verify every message
-- **`optionalDVNs`**: Array of additional DVN names for enhanced security
-- **`optionalDVNThreshold`**: Number of optional DVNs that must verify
-- **`confirmations`**: Array of block confirmations [A→B, B→A]
-- **`maxMessageSize`**: Maximum message size in bytes
-- **`enforcedOptions`**: Array of gas settings [A→B, B→A]
-
-### Enforced Options
-
-Configure gas limits for different message types:
+Each pathway defines a unidirectional communication channel:
 
 ```json
-"enforcedOptions": [
-  {
-    "lzReceiveGas": 150000,        // Gas for standard messages
-    "lzReceiveValue": 0,           // Value to send with message
-    "lzComposeGas": 0,             // Gas for compose messages
-    "lzComposeIndex": 0,           // Compose message index
-    "lzNativeDropAmount": 0,       // Native token drop amount
-    "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
-  }
-]
+{
+  "from": "source_chain",
+  "to": "destination_chain",
+  "requiredDVNs": ["LayerZero Labs"],      // Must verify every message
+  "optionalDVNs": ["Google Cloud"],        // Additional security
+  "optionalDVNThreshold": 1,               // How many optional DVNs must verify
+  "confirmations": [15, 10],               // [A→B blocks, B→A blocks]
+  "maxMessageSize": 10000,                 // Maximum message size in bytes
+  "enforcedOptions": [                     // Minimum execution requirements
+    {
+      "lzReceiveGas": 200000,             // Gas for standard messages
+      "lzReceiveValue": 0,                // ETH value to send
+      "lzComposeGas": 0,                  // Gas for composed messages
+      "lzComposeIndex": 0,                // Compose configuration index
+      "lzNativeDropAmount": 0,            // Native tokens to drop
+      "lzNativeDropRecipient": "0x..."    // Drop recipient
+    }
+  ]
+}
 ```
 
-## DVN Configuration
+### Understanding Key Concepts
 
-**Important**: DVNs are chain-specific contracts. Each chain has its own DVN addresses.
+#### Bidirectional Communication
+- Set `"bidirectional": true` to automatically create reverse pathways
+- Each direction can have different configurations (confirmations, gas, etc.)
 
-For a Base → Arbitrum pathway:
-- **Base send config**: Uses Base's LayerZero Labs DVN
-- **Arbitrum receive config**: Uses Arbitrum's LayerZero Labs DVN
+#### DVNs (Decentralized Verifier Networks)
+- **Required DVNs**: Must verify every message (security critical)
+- **Optional DVNs**: Additional validators for enhanced security
+- DVN addresses are automatically resolved from metadata
 
-The script automatically resolves the correct DVN addresses for each chain from the metadata.
+#### Confirmations
+- Array format: `[A→B, B→A]`
+- Different chains need different confirmations based on finality
+- Example: Ethereum→Polygon might need 15, Polygon→Ethereum might need 5
 
-### Available DVNs
-
-Common DVN providers per chain:
-- LayerZero Labs (available on all chains)
-- Google Cloud
-- Polyhedra
-- Animoca
-
-Check `layerzero-dvns.json` for complete list and addresses.
-
-## Troubleshooting
-
-### Nonce Issues
-
-When wiring multiple chains, use the `--slow` flag to avoid nonce conflicts:
-
-```bash
-forge script script/WireOApp.s.sol:WireOApp ... --broadcast --slow
-```
-
-Or wire chains individually:
-
-```bash
-# Wire only source chain configurations
-forge script script/WireOApp.s.sol:WireOApp \
-  --sig "runSourceOnly(string,string,string)" \
-  "utils/wire-config.json" \
-  "layerzero-deployments.json" \
-  "layerzero-dvns.json" \
-  --via-ir --broadcast
-
-# Then wire destination chains
-forge script script/WireOApp.s.sol:WireOApp \
-  --sig "runDestinationOnly(string,string,string)" \
-  "utils/wire-config.json" \
-  "layerzero-deployments.json" \
-  "layerzero-dvns.json" \
-  --via-ir --broadcast
-```
-
-### DVN Resolution Errors
-
-If you get "DVN not found" errors:
-
-1. **Check DVN name spelling**: Must match exactly from `layerzero-dvns.json`
-2. **Verify DVN availability**: Some DVNs aren't available on all chains
-3. **Check DVN status**: Ensure DVN isn't deprecated or read-only
-
-### Configuration Validation
-
-The script includes built-in validation:
-
-- Verifies all required DVNs exist for each chain
-- Checks OApp addresses are valid
-- Validates RPC URLs are accessible
-- Confirms endpoint addresses are correct
+#### Enforced Options
+- Set minimum gas to prevent out-of-gas failures
+- Users can always provide more gas, but not less
+- Configure separately for standard and composed messages
 
 ## Advanced Usage
 
 ### Partial Wiring
 
-For large deployments, wire source and destination chains separately:
+For large deployments or to avoid nonce issues:
 
 ```bash
 # Wire source chains only
 forge script script/WireOApp.s.sol:WireOApp \
   -s "runSourceOnly(string,string,string)" \
-  "./utils/wire-config.json" \
+  "./utils/layerzero.config.json" \
   "./layerzero-deployments.json" \
   "./layerzero-dvns.json" \
-  --broadcast --multi -vvv
+  --via-ir --broadcast --multi -vvv
 
 # Wire destination chains only  
 forge script script/WireOApp.s.sol:WireOApp \
   -s "runDestinationOnly(string,string,string)" \
-  "./utils/wire-config.json" \
+  "./utils/layerzero.config.json" \
   "./layerzero-deployments.json" \
   "./layerzero-dvns.json" \
-  --broadcast --multi -vvv
-```
-
-### Check-Only Mode
-
-Validate configuration without making changes:
-
-```bash
-CHECK_ONLY=true forge script script/WireOApp.s.sol:WireOApp \
-  --sig "run(string,string,string)" \
-  "utils/wire-config.json" \
-  "layerzero-deployments.json" \
-  "layerzero-dvns.json" \
-  --via-ir
+  --via-ir --broadcast --multi -vvv
 ```
 
 ### Custom DVN Overrides
 
-Override DVN addresses in the config file:
+Add custom DVN addresses in your config:
 
 ```json
 {
   "chains": { ... },
   "pathways": [ ... ],
   "dvns": {
-    "LayerZero Labs": {
-      "base": "0xCustomDVNAddress",
-      "arbitrum": "0xAnotherCustomAddress"
+    "My Custom DVN": {
+      "base": "0xCustomDVNAddressOnBase",
+      "arbitrum": "0xCustomDVNAddressOnArbitrum"
     }
   }
 }
 ```
 
-### Environment Variables
+### Multi-Chain Example
 
-Set these environment variables:
+Wire multiple chains with different configurations:
 
-```bash
-export PRIVATE_KEY=your_private_key_here
-export CHECK_ONLY=false  # Set to true for dry run
+```json
+{
+  "chains": {
+    "ethereum": { "eid": 30101, "rpc": "...", "oapp": "0x..." },
+    "arbitrum": { "eid": 30110, "rpc": "...", "oapp": "0x..." },
+    "base": { "eid": 30184, "rpc": "...", "oapp": "0x..." }
+  },
+  "pathways": [
+    {
+      "from": "ethereum",
+      "to": "arbitrum",
+      "requiredDVNs": ["LayerZero Labs", "Google Cloud"],
+      "confirmations": [15, 10],
+      "maxMessageSize": 10000,
+      "enforcedOptions": [{
+        "lzReceiveGas": 250000,
+        "lzReceiveValue": 0,
+        "lzComposeGas": 0,
+        "lzComposeIndex": 0,
+        "lzNativeDropAmount": 0,
+        "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+      }]
+    },
+    {
+      "from": "ethereum",
+      "to": "base",
+      "requiredDVNs": ["LayerZero Labs"],
+      "confirmations": [15, 3],
+      "maxMessageSize": 10000,
+      "enforcedOptions": [{
+        "lzReceiveGas": 150000,
+        "lzReceiveValue": 0,
+        "lzComposeGas": 0,
+        "lzComposeIndex": 0,
+        "lzNativeDropAmount": 0,
+        "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+      }]
+    }
+  ],
+  "bidirectional": true
+}
 ```
 
-### Console Output
+## Troubleshooting
 
-The script provides detailed console output:
+### Common Issues
 
-- ✅ Success messages for completed actions
-- ⚠️ Warnings for optional DVNs not found
-- ❌ Errors for configuration issues
-- 📊 Progress indicators for multi-chain operations
+1. **"DVN not found" errors**
+   - Verify DVN name spelling matches exactly
+   - Check DVN is available on both chains
+   - Some DVNs may be deprecated
 
-### Security Considerations
+2. **"Source deployment not found"**
+   - Check chain name matches deployment JSON
+   - Verify endpoint ID is correct
+   - Ensure using LayerZero V2 deployments
 
-- Use multiple required DVNs for production
-- Set appropriate confirmation counts per chain
-- Configure gas limits based on message complexity
-- Monitor transactions on [LayerZero Scan](https://layerzeroscan.com) 
+3. **Transaction failures**
+   - Verify signer owns the OApp contracts
+   - Ensure sufficient native tokens for gas
+   - Check RPC URL rate limits
+
+4. **Nonce issues**
+   - Use `--slow` flag or wire chains separately
+   - Wait between transactions on same chain
+
+### Verification
+
+After wiring, verify your configuration:
+
+1. Run script in check-only mode
+2. Check on [LayerZero Scan](https://layerzeroscan.com)
+3. Send a test message between OApps
+
+### Security Best Practices
+
+- Use multiple required DVNs for production (2-3 recommended)
+- Set appropriate confirmations based on chain finality
+- Test on testnet before mainnet deployment
+- Monitor for failed messages on LayerZero Scan
+
+## Available DVNs
+
+Common DVN providers:
+- LayerZero Labs
+- Google Cloud
+- Polyhedra
+- Animoca
+- Nethermind
+- P2P.org
+- Stargate
+
+Check `layerzero-dvns.json` for complete list per chain.
+
+## Resources
+
+- [LayerZero V2 Docs](https://docs.layerzero.network/v2)
+- [Endpoint IDs](https://docs.layerzero.network/v2/developers/evm/technical-reference/deployed-contracts)
+- [DVN Addresses](https://docs.layerzero.network/v2/developers/evm/technical-reference/dvn-addresses)
+- [LayerZero Scan](https://layerzeroscan.com) 
