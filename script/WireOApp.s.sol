@@ -2,13 +2,16 @@
 pragma solidity ^0.8.22;
 
 import "forge-std/Script.sol";
-import { ILayerZeroEndpointV2 } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
-import { SetConfigParam } from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
-import { UlnConfig } from "@layerzerolabs/lz-evm-messagelib-v2/contracts/uln/UlnBase.sol";
-import { ExecutorConfig } from "@layerzerolabs/lz-evm-messagelib-v2/contracts/SendLibBase.sol";
-import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
-import { IOAppOptionsType3, EnforcedOptionParam } from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppOptionsType3.sol";
-import { IOAppCore } from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
+import {ILayerZeroEndpointV2} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/ILayerZeroEndpointV2.sol";
+import {SetConfigParam} from "@layerzerolabs/lz-evm-protocol-v2/contracts/interfaces/IMessageLibManager.sol";
+import {UlnConfig} from "@layerzerolabs/lz-evm-messagelib-v2/contracts/uln/UlnBase.sol";
+import {ExecutorConfig} from "@layerzerolabs/lz-evm-messagelib-v2/contracts/SendLibBase.sol";
+import {OptionsBuilder} from "@layerzerolabs/oapp-evm/contracts/oapp/libs/OptionsBuilder.sol";
+import {
+    IOAppOptionsType3,
+    EnforcedOptionParam
+} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppOptionsType3.sol";
+import {IOAppCore} from "@layerzerolabs/oapp-evm/contracts/oapp/interfaces/IOAppCore.sol";
 
 // Interface for accessing enforcedOptions mapping
 interface IOAppWithEnforcedOptions {
@@ -18,7 +21,7 @@ interface IOAppWithEnforcedOptions {
 /// @title LayerZero OApp Wire Script
 /// @notice Automatically wires LayerZero pathways using deployment artifacts from JSON API
 /// @dev Uses vm.parseJson to read LayerZero deployment contracts and configure pathways
-/// 
+///
 /// CONTRACT STRUCTURE:
 /// ==================
 /// 1. CONSTANTS & STATE VARIABLES
@@ -32,7 +35,7 @@ interface IOAppWithEnforcedOptions {
 ///
 contract WireOApp is Script {
     using OptionsBuilder for bytes;
-    
+
     // ============================================
     // SECTION 1: CONSTANTS & STATE VARIABLES
     // ============================================
@@ -44,34 +47,38 @@ contract WireOApp is Script {
     // Message types
     uint16 constant MSG_TYPE_STANDARD = 1;
     uint16 constant MSG_TYPE_COMPOSED = 2;
-    
+
     // Console formatting helpers
     string constant HEADER_LINE = "================================================================================";
     string constant SUB_LINE = "--------------------------------------------------------------------------------";
+    
+    // Default API endpoints
+    string constant DEFAULT_DEPLOYMENTS_API = "https://metadata.layerzero-api.com/v1/metadata/deployments";
+    string constant DEFAULT_DVNS_API = "https://metadata.layerzero-api.com/v1/metadata/dvns";
 
     // Storage for parsed deployments
     mapping(uint32 => Deployment) public deployments;
-    
+
     // Storage for RPC and signer mappings
     mapping(uint32 => string) public eidToRpc;
     mapping(uint32 => address) public eidToSigner; // DEPRECATED - will use private key
-    
+
     // Storage for chain name to config mapping
     mapping(string => ChainConfig) public chainConfigs;
-    
+
     // Storage for DVN name to chain to address mapping
     mapping(string => mapping(string => address)) public dvnAddresses;
-    
+
     // Storage for private key
     uint256 private deployerPrivateKey;
-    
+
     // Storage for configured chain names
     string[] private configuredChainNames;
 
     // ============================================
     // SECTION 2: DATA STRUCTURES
     // ============================================
-    
+
     // Structs to match JSON deployment structure
     struct Deployment {
         uint32 eid;
@@ -105,13 +112,13 @@ contract WireOApp is Script {
         address dstOApp;
         uint64 confirmations;
         uint8 requiredDVNCount;
-        address[] srcRequiredDVNs;    // DVNs on source chain for send config
-        address[] dstRequiredDVNs;    // DVNs on destination chain for receive config
-        address[] srcOptionalDVNs;    // Optional DVNs on source chain
-        address[] dstOptionalDVNs;    // Optional DVNs on destination chain
+        address[] srcRequiredDVNs; // DVNs on source chain for send config
+        address[] dstRequiredDVNs; // DVNs on destination chain for receive config
+        address[] srcOptionalDVNs; // Optional DVNs on source chain
+        address[] dstOptionalDVNs; // Optional DVNs on destination chain
         uint8 optionalDVNThreshold;
         uint32 maxMessageSize;
-        EnforcedOptions[] enforcedOptions;  // Array of enforced options for different message types
+        EnforcedOptions[] enforcedOptions; // Array of enforced options for different message types
     }
 
     struct RawPathwayConfig {
@@ -126,13 +133,13 @@ contract WireOApp is Script {
     }
     
     struct EnforcedOptions {
-        uint16 msgType;                      // Message type (1 for standard, 2 for composed, etc.)
-        uint128 lzReceiveGas;                // Gas for standard message (msgType 1)
-        uint128 lzReceiveValue;              // Value for standard message (msgType 1)
-        uint128 lzComposeGas;                // Gas for composed message (msgType 2)
-        uint16 lzComposeIndex;               // Index for composed message (msgType 2)
-        uint128 lzNativeDropAmount;          // Amount for native drop
-        address lzNativeDropRecipient;       // Recipient for native drop
+        uint16 msgType; // Message type (1 for standard, 2 for composed, etc.)
+        uint128 lzReceiveGas; // Gas for standard message (msgType 1)
+        uint128 lzReceiveValue; // Value for standard message (msgType 1)
+        uint128 lzComposeGas; // Gas for composed message (msgType 2)
+        uint16 lzComposeIndex; // Index for composed message (msgType 2)
+        uint128 lzNativeDropAmount; // Amount for native drop
+        address lzNativeDropRecipient; // Recipient for native drop
     }
 
     struct WireConfig {
@@ -146,94 +153,145 @@ contract WireOApp is Script {
 
     /// @notice Main function to wire all pathways for an OApp
     /// @param configPath Path to JSON config file containing pathway configurations
-    /// @param deploymentJsonPath Path to JSON file with LayerZero deployments
-    /// @param dvnJsonPath Path to JSON file with LayerZero DVN metadata
-    function run(string memory configPath, string memory deploymentJsonPath, string memory dvnJsonPath) external {
+    /// @param deploymentSource Optional: URL or path to LayerZero deployments (defaults to API)
+    /// @param dvnSource Optional: URL or path to LayerZero DVN metadata (defaults to API)
+    function runWithSources(string memory configPath, string memory deploymentSource, string memory dvnSource) public {
         // Get the private key from environment
         deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address signer = vm.addr(deployerPrivateKey);
-        
+
         // Check if we're in check-only mode
         bool checkOnly = vm.envOr("CHECK_ONLY", false);
-        
+
         // Print header
         printHeader("LAYERZERO WIRE SCRIPT");
         console.log(string.concat("  Signer: ", shortAddress(signer)));
         console.log(string.concat("  Mode:   ", checkOnly ? "CHECK ONLY" : "CONFIGURE"));
-        
+
         // Read config JSON
         string memory configJson = vm.readFile(configPath);
-        
+
         // Parse basic configuration and chain configs first
         bool bidirectional = vm.parseJsonBool(configJson, ".bidirectional");
         parseChainConfigs(configJson);
         parseDVNOverrides(configJson);
         
+        // Check if sources are provided in config, otherwise use parameters or defaults
+        string memory deploymentsSource = deploymentSource;
+        string memory dvnsSource = dvnSource;
+        
+        // If not provided as parameters, check config file
+        if (bytes(deploymentsSource).length == 0) {
+            try vm.parseJsonString(configJson, ".deploymentsSource") returns (string memory configDeploymentSource) {
+                deploymentsSource = configDeploymentSource;
+            } catch {
+                // Use default API
+                deploymentsSource = DEFAULT_DEPLOYMENTS_API;
+            }
+        }
+        
+        if (bytes(dvnsSource).length == 0) {
+            try vm.parseJsonString(configJson, ".dvnsSource") returns (string memory configDvnSource) {
+                dvnsSource = configDvnSource;
+            } catch {
+                // Use default API
+                dvnsSource = DEFAULT_DVNS_API;
+            }
+        }
+
         // Parse LayerZero deployments (only for configured chains)
         console.log("\n  Loading deployments...");
-        parseDeployments(deploymentJsonPath);
-        
+        parseDeployments(deploymentsSource);
+
         // Parse LayerZero DVN metadata
         console.log("  Loading DVN metadata...");
-        parseDVNMetadata(dvnJsonPath);
-        
+        parseDVNMetadata(dvnsSource);
+
         // Now parse pathways after DVN metadata is loaded
         PathwayConfig[] memory pathways = parsePathways(configJson, bidirectional);
-        
+
         // Pre-flight check
         uint256 needsConfig = preflightCheck(pathways);
-        
+
         if (checkOnly) {
             console.log("\n  Check complete. Exiting.");
             return;
         }
-        
+
         if (needsConfig == 0) {
             return;
         }
-        
+
         // Wire pathways that need configuration
         printSubHeader("Configuring Pathways");
         uint256 configured = 0;
-        
+
         for (uint256 i = 0; i < pathways.length; i++) {
             if (!isPathwayConfigured(pathways[i])) {
                 configured++;
-                console.log(string.concat("\n[", vm.toString(configured), "/", vm.toString(needsConfig), "] Configuring pathway"));
+                console.log(
+                    string.concat(
+                        "\n[", vm.toString(configured), "/", vm.toString(needsConfig), "] Configuring pathway"
+                    )
+                );
                 wirePathway(pathways[i]);
             }
         }
-        
+
         printHeader("CONFIGURATION COMPLETE");
         printSuccess(string.concat("Successfully configured ", vm.toString(configured), " pathways"));
+    }
+    
+    /// @notice Convenience function with just config path (uses default APIs)
+    function run(string memory configPath) external {
+        runWithSources(configPath, "", "");
+    }
+    
+    /// @notice Legacy compatibility - supports the old 3-parameter signature
+    function run(string memory configPath, string memory deploymentSource, string memory dvnSource) external {
+        runWithSources(configPath, deploymentSource, dvnSource);
     }
 
     /// @notice Wire only the source side of pathways
     /// @param configPath Path to JSON config file containing pathway configurations
-    /// @param deploymentJsonPath Path to JSON file with LayerZero deployments
-    /// @param dvnJsonPath Path to JSON file with LayerZero DVN metadata
-    function runSourceOnly(string memory configPath, string memory deploymentJsonPath, string memory dvnJsonPath) external {
-        runPartial(configPath, deploymentJsonPath, dvnJsonPath, true, false);
+    /// @param deploymentSource Optional: URL or path to LayerZero deployments (defaults to API)
+    /// @param dvnSource Optional: URL or path to LayerZero DVN metadata (defaults to API)
+    function runSourceOnly(string memory configPath, string memory deploymentSource, string memory dvnSource)
+        external
+    {
+        runPartial(configPath, deploymentSource, dvnSource, true, false);
     }
     
+    /// @notice Convenience function for source only with just config path
+    function runSourceOnly(string memory configPath) external {
+        runPartial(configPath, "", "", true, false);
+    }
+
     /// @notice Wire only the destination side of pathways
     /// @param configPath Path to JSON config file containing pathway configurations
-    /// @param deploymentJsonPath Path to JSON file with LayerZero deployments
-    /// @param dvnJsonPath Path to JSON file with LayerZero DVN metadata
-    function runDestinationOnly(string memory configPath, string memory deploymentJsonPath, string memory dvnJsonPath) external {
-        runPartial(configPath, deploymentJsonPath, dvnJsonPath, false, true);
+    /// @param deploymentSource Optional: URL or path to LayerZero deployments (defaults to API)
+    /// @param dvnSource Optional: URL or path to LayerZero DVN metadata (defaults to API)
+    function runDestinationOnly(string memory configPath, string memory deploymentSource, string memory dvnSource)
+        external
+    {
+        runPartial(configPath, deploymentSource, dvnSource, false, true);
     }
     
+    /// @notice Convenience function for destination only with just config path
+    function runDestinationOnly(string memory configPath) external {
+        runPartial(configPath, "", "", false, true);
+    }
+
     /// @notice Partial wiring function
     /// @param configPath Path to JSON config file containing pathway configurations
-    /// @param deploymentJsonPath Path to JSON file with LayerZero deployments
-    /// @param dvnJsonPath Path to JSON file with LayerZero DVN metadata
+    /// @param deploymentSource Optional: URL or path to LayerZero deployments (defaults to API)
+    /// @param dvnSource Optional: URL or path to LayerZero DVN metadata (defaults to API)
     /// @param doSource Whether to wire source chains
     /// @param doDestination Whether to wire destination chains
     function runPartial(
-        string memory configPath, 
-        string memory deploymentJsonPath, 
-        string memory dvnJsonPath,
+        string memory configPath,
+        string memory deploymentSource,
+        string memory dvnSource,
         bool doSource,
         bool doDestination
     ) internal {
@@ -245,21 +303,44 @@ contract WireOApp is Script {
         if (doSource && doDestination) {
             console.log("WARNING: Wiring both source and destination in same run may cause nonce issues!");
         }
-        
+
         // Read config JSON
         string memory configJson = vm.readFile(configPath);
-        
+
         // Parse basic configuration and chain configs first
         bool bidirectional = vm.parseJsonBool(configJson, ".bidirectional");
         parseChainConfigs(configJson);
         parseDVNOverrides(configJson);
         
+        // Check if sources are provided in config, otherwise use parameters or defaults
+        string memory deploymentsSource = deploymentSource;
+        string memory dvnsSource = dvnSource;
+        
+        // If not provided as parameters, check config file
+        if (bytes(deploymentsSource).length == 0) {
+            try vm.parseJsonString(configJson, ".deploymentsSource") returns (string memory configDeploymentSource) {
+                deploymentsSource = configDeploymentSource;
+            } catch {
+                // Use default API
+                deploymentsSource = DEFAULT_DEPLOYMENTS_API;
+            }
+        }
+        
+        if (bytes(dvnsSource).length == 0) {
+            try vm.parseJsonString(configJson, ".dvnsSource") returns (string memory configDvnSource) {
+                dvnsSource = configDvnSource;
+            } catch {
+                // Use default API
+                dvnsSource = DEFAULT_DVNS_API;
+            }
+        }
+        
         // Parse LayerZero deployments (only for configured chains)
-        parseDeployments(deploymentJsonPath);
+        parseDeployments(deploymentsSource);
         
         // Parse LayerZero DVN metadata
-        parseDVNMetadata(dvnJsonPath);
-        
+        parseDVNMetadata(dvnsSource);
+
         // Now parse pathways after DVN metadata is loaded
         PathwayConfig[] memory pathways = parsePathways(configJson, bidirectional);
         
@@ -267,7 +348,7 @@ contract WireOApp is Script {
         for (uint256 i = 0; i < pathways.length; i++) {
             wirePathwayPartial(pathways[i], doSource, doDestination);
         }
-        
+
         if (doSource) {
             console.log("Successfully wired all source chains");
         }
@@ -285,35 +366,36 @@ contract WireOApp is Script {
         // Get deployments
         Deployment memory srcDeployment = deployments[pathway.srcEid];
         Deployment memory dstDeployment = deployments[pathway.dstEid];
-        
+
         require(srcDeployment.endpointV2.addr != address(0), "Source deployment not found");
         require(dstDeployment.endpointV2.addr != address(0), "Destination deployment not found");
-        
+
         // Show pathway being configured
         console.log("");
-        console.log(string.concat("  ", chainName(pathway.srcEid), " (", vm.toString(pathway.srcEid), ") --> ", 
-                                  chainName(pathway.dstEid), " (", vm.toString(pathway.dstEid), ")"));
+        console.log(
+            string.concat(
+                "  ",
+                chainName(pathway.srcEid),
+                " (",
+                vm.toString(pathway.srcEid),
+                ") --> ",
+                chainName(pathway.dstEid),
+                " (",
+                vm.toString(pathway.dstEid),
+                ")"
+            )
+        );
         console.log(string.concat("  Source OApp: ", shortAddress(pathway.srcOApp)));
         console.log(string.concat("  Dest OApp:   ", shortAddress(pathway.dstOApp)));
-        
+
         // Wire source chain
         console.log("\n  Source Configuration:");
-        wireSourceChain(
-            pathway.srcOApp,
-            pathway,
-            srcDeployment,
-            eidToRpc[pathway.srcEid]
-        );
-        
+        wireSourceChain(pathway.srcOApp, pathway, srcDeployment, eidToRpc[pathway.srcEid]);
+
         // Wire destination chain
         console.log("\n  Destination Configuration:");
-        wireDestinationChain(
-            pathway.dstOApp,
-            pathway,
-            dstDeployment,
-            eidToRpc[pathway.dstEid]
-        );
-        
+        wireDestinationChain(pathway.dstOApp, pathway, dstDeployment, eidToRpc[pathway.dstEid]);
+
         printSuccess("Pathway configured successfully");
     }
 
@@ -326,13 +408,13 @@ contract WireOApp is Script {
     ) internal {
         // Switch to source chain
         vm.createSelectFork(rpcUrl);
-        
+
         ILayerZeroEndpointV2 endpoint = ILayerZeroEndpointV2(deployment.endpointV2.addr);
-        
+
         vm.startBroadcast(deployerPrivateKey);
-        
+
         uint256 actions = 0;
-        
+
         // Check and set send library on the source OApp for the destination chain
         address currentSendLib = endpoint.getSendLibrary(oapp, pathway.dstEid);
         if (currentSendLib != deployment.sendUln302.addr) {
@@ -340,7 +422,7 @@ contract WireOApp is Script {
             printAction("Set send library");
             actions++;
         }
-        
+
         // Check and set peer on source OApp for the destination OApp
         bytes32 expectedPeer = bytes32(uint256(uint160(pathway.dstOApp)));
         bytes32 currentPeer = IOAppCore(oapp).peers(pathway.dstEid);
@@ -349,27 +431,21 @@ contract WireOApp is Script {
             printAction("Set peer");
             actions++;
         }
-        
+
         // Set enforced options on source OApp
         if (setEnforcedOptions(oapp, pathway.dstEid, pathway.enforcedOptions)) {
             actions++;
         }
-        
+
         // Set send configurations
-        if (setSendConfigurations(
-            endpoint,
-            oapp,
-            deployment.sendUln302.addr,
-            pathway,
-            deployment.executor.addr
-        )) {
+        if (setSendConfigurations(endpoint, oapp, deployment.sendUln302.addr, pathway, deployment.executor.addr)) {
             actions++;
         }
-        
+
         if (actions == 0) {
             printSkip("Source already configured");
         }
-        
+
         vm.stopBroadcast();
     }
 
@@ -382,21 +458,21 @@ contract WireOApp is Script {
     ) internal {
         // Switch to destination chain
         vm.createSelectFork(rpcUrl);
-        
+
         ILayerZeroEndpointV2 endpoint = ILayerZeroEndpointV2(deployment.endpointV2.addr);
-        
+
         vm.startBroadcast(deployerPrivateKey);
-        
+
         uint256 actions = 0;
-        
+
         // Check and set receive library on the destination OApp for the source chain
-        (address currentReceiveLib, ) = endpoint.getReceiveLibrary(oapp, pathway.srcEid);
+        (address currentReceiveLib,) = endpoint.getReceiveLibrary(oapp, pathway.srcEid);
         if (currentReceiveLib != deployment.receiveUln302.addr) {
             endpoint.setReceiveLibrary(oapp, pathway.srcEid, deployment.receiveUln302.addr, 0);
             printAction("Set receive library");
             actions++;
         }
-        
+
         // Check and set peer on destination OApp for the source OApp
         bytes32 expectedPeer = bytes32(uint256(uint160(pathway.srcOApp)));
         bytes32 currentPeer = IOAppCore(oapp).peers(pathway.srcEid);
@@ -405,21 +481,16 @@ contract WireOApp is Script {
             printAction("Set peer");
             actions++;
         }
-        
+
         // Set receive configurations
-        if (setReceiveConfigurations(
-            endpoint,
-            oapp,
-            deployment.receiveUln302.addr,
-            pathway
-        )) {
+        if (setReceiveConfigurations(endpoint, oapp, deployment.receiveUln302.addr, pathway)) {
             actions++;
         }
-        
+
         if (actions == 0) {
             printSkip("Destination already configured");
         }
-        
+
         vm.stopBroadcast();
     }
 
@@ -440,22 +511,25 @@ contract WireOApp is Script {
             requiredDVNs: pathway.srcRequiredDVNs,
             optionalDVNs: pathway.srcOptionalDVNs
         });
-        
+
         // Configure Executor
-        ExecutorConfig memory execConfig = ExecutorConfig({
-            maxMessageSize: pathway.maxMessageSize,
-            executor: executorAddr
-        });
-        
+        ExecutorConfig memory execConfig =
+            ExecutorConfig({maxMessageSize: pathway.maxMessageSize, executor: executorAddr});
+
         // Check current configurations
         SetConfigParam[] memory params = new SetConfigParam[](0);
         uint256 paramCount = 0;
-        
+
         // Check executor config
-        try endpoint.getConfig(oapp, sendLib, pathway.dstEid, EXECUTOR_CONFIG_TYPE) returns (bytes memory currentExecConfig) {
+        try endpoint.getConfig(oapp, sendLib, pathway.dstEid, EXECUTOR_CONFIG_TYPE) returns (
+            bytes memory currentExecConfig
+        ) {
             if (currentExecConfig.length > 0) {
                 ExecutorConfig memory currentExec = abi.decode(currentExecConfig, (ExecutorConfig));
-                if (currentExec.maxMessageSize != execConfig.maxMessageSize || currentExec.executor != execConfig.executor) {
+                if (
+                    currentExec.maxMessageSize != execConfig.maxMessageSize
+                        || currentExec.executor != execConfig.executor
+                ) {
                     paramCount++;
                 }
             } else {
@@ -464,7 +538,7 @@ contract WireOApp is Script {
         } catch {
             paramCount++;
         }
-        
+
         // Check ULN config
         try endpoint.getConfig(oapp, sendLib, pathway.dstEid, ULN_CONFIG_TYPE) returns (bytes memory currentUlnConfig) {
             if (currentUlnConfig.length > 0) {
@@ -478,28 +552,36 @@ contract WireOApp is Script {
         } catch {
             paramCount++;
         }
-        
+
         // Only set configurations if needed
         if (paramCount > 0) {
             params = new SetConfigParam[](paramCount);
             uint256 paramIndex = 0;
-            
+
             // Add executor config if needed
-            try endpoint.getConfig(oapp, sendLib, pathway.dstEid, EXECUTOR_CONFIG_TYPE) returns (bytes memory currentExecConfig) {
+            try endpoint.getConfig(oapp, sendLib, pathway.dstEid, EXECUTOR_CONFIG_TYPE) returns (
+                bytes memory currentExecConfig
+            ) {
                 if (currentExecConfig.length == 0) {
                     params[paramIndex++] = SetConfigParam(pathway.dstEid, EXECUTOR_CONFIG_TYPE, abi.encode(execConfig));
                 } else {
                     ExecutorConfig memory currentExec = abi.decode(currentExecConfig, (ExecutorConfig));
-                    if (currentExec.maxMessageSize != execConfig.maxMessageSize || currentExec.executor != execConfig.executor) {
-                        params[paramIndex++] = SetConfigParam(pathway.dstEid, EXECUTOR_CONFIG_TYPE, abi.encode(execConfig));
+                    if (
+                        currentExec.maxMessageSize != execConfig.maxMessageSize
+                            || currentExec.executor != execConfig.executor
+                    ) {
+                        params[paramIndex++] =
+                            SetConfigParam(pathway.dstEid, EXECUTOR_CONFIG_TYPE, abi.encode(execConfig));
                     }
                 }
             } catch {
                 params[paramIndex++] = SetConfigParam(pathway.dstEid, EXECUTOR_CONFIG_TYPE, abi.encode(execConfig));
             }
-            
+
             // Add ULN config if needed
-            try endpoint.getConfig(oapp, sendLib, pathway.dstEid, ULN_CONFIG_TYPE) returns (bytes memory currentUlnConfig) {
+            try endpoint.getConfig(oapp, sendLib, pathway.dstEid, ULN_CONFIG_TYPE) returns (
+                bytes memory currentUlnConfig
+            ) {
                 if (currentUlnConfig.length == 0) {
                     params[paramIndex++] = SetConfigParam(pathway.dstEid, ULN_CONFIG_TYPE, abi.encode(ulnConfig));
                 } else {
@@ -511,7 +593,7 @@ contract WireOApp is Script {
             } catch {
                 params[paramIndex++] = SetConfigParam(pathway.dstEid, ULN_CONFIG_TYPE, abi.encode(ulnConfig));
             }
-            
+
             // Set configurations
             endpoint.setConfig(oapp, sendLib, params);
             printAction("Set send configurations");
@@ -537,10 +619,12 @@ contract WireOApp is Script {
             requiredDVNs: pathway.dstRequiredDVNs,
             optionalDVNs: pathway.dstOptionalDVNs
         });
-        
+
         // Check current ULN config
         bool needsUpdate = false;
-        try endpoint.getConfig(oapp, receiveLib, pathway.srcEid, ULN_CONFIG_TYPE) returns (bytes memory currentUlnConfig) {
+        try endpoint.getConfig(oapp, receiveLib, pathway.srcEid, ULN_CONFIG_TYPE) returns (
+            bytes memory currentUlnConfig
+        ) {
             if (currentUlnConfig.length > 0) {
                 UlnConfig memory currentUln = abi.decode(currentUlnConfig, (UlnConfig));
                 if (!isUlnConfigEqual(currentUln, ulnConfig)) {
@@ -552,16 +636,16 @@ contract WireOApp is Script {
         } catch {
             needsUpdate = true;
         }
-        
+
         // Only set configuration if needed
         if (needsUpdate) {
             // Encode configuration
             bytes memory encodedUln = abi.encode(ulnConfig);
-            
+
             // Create config params
             SetConfigParam[] memory params = new SetConfigParam[](1);
             params[0] = SetConfigParam(pathway.srcEid, ULN_CONFIG_TYPE, encodedUln);
-            
+
             // Set configuration
             endpoint.setConfig(oapp, receiveLib, params);
             printAction("Set receive configurations");
@@ -572,76 +656,63 @@ contract WireOApp is Script {
     }
 
     /// @notice Set enforced options on the OApp
-    function setEnforcedOptions(
-        address oapp,
-        uint32 dstEid,
-        EnforcedOptions[] memory options
-    ) internal returns (bool) {
+    function setEnforcedOptions(address oapp, uint32 dstEid, EnforcedOptions[] memory options)
+        internal
+        returns (bool)
+    {
         if (options.length == 0) {
             return false;
         }
-        
+
         // Build enforced option params for each message type
         EnforcedOptionParam[] memory params = new EnforcedOptionParam[](options.length);
         uint256 paramsNeeded = 0;
-        
+
         for (uint256 i = 0; i < options.length; i++) {
             EnforcedOptions memory opt = options[i];
-            
+
             // Build expected options based on what's actually set
             bytes memory expectedOptions = OptionsBuilder.newOptions();
-            
+
             // Add lzReceive option if gas is specified
             if (opt.lzReceiveGas > 0) {
-                expectedOptions = OptionsBuilder.addExecutorLzReceiveOption(
-                    expectedOptions,
-                    opt.lzReceiveGas,
-                    opt.lzReceiveValue
-                );
+                expectedOptions =
+                    OptionsBuilder.addExecutorLzReceiveOption(expectedOptions, opt.lzReceiveGas, opt.lzReceiveValue);
             }
-            
+
             // Add lzCompose option if gas is specified
             if (opt.lzComposeGas > 0) {
-                expectedOptions = OptionsBuilder.addExecutorLzComposeOption(
-                    expectedOptions,
-                    opt.lzComposeIndex,
-                    opt.lzComposeGas,
-                    0
-                );
+                expectedOptions =
+                    OptionsBuilder.addExecutorLzComposeOption(expectedOptions, opt.lzComposeIndex, opt.lzComposeGas, 0);
             }
-            
+
             // Add native drop if specified
             if (opt.lzNativeDropAmount > 0 && opt.lzNativeDropRecipient != address(0)) {
                 expectedOptions = OptionsBuilder.addExecutorNativeDropOption(
-                    expectedOptions,
-                    opt.lzNativeDropAmount,
-                    bytes32(uint256(uint160(opt.lzNativeDropRecipient)))
+                    expectedOptions, opt.lzNativeDropAmount, bytes32(uint256(uint160(opt.lzNativeDropRecipient)))
                 );
             }
-            
+
             // Skip if no options were actually added
             if (expectedOptions.length == 1) {
                 continue;
             }
-            
+
             bytes memory currentOptions = IOAppWithEnforcedOptions(oapp).enforcedOptions(dstEid, opt.msgType);
             if (!areOptionsEqual(currentOptions, expectedOptions)) {
-                params[paramsNeeded] = EnforcedOptionParam({
-                    eid: dstEid,
-                    msgType: opt.msgType,
-                    options: expectedOptions
-                });
+                params[paramsNeeded] =
+                    EnforcedOptionParam({eid: dstEid, msgType: opt.msgType, options: expectedOptions});
                 paramsNeeded++;
                 console.log("Message type", opt.msgType, "enforced options need update");
             } else {
                 console.log("Message type", opt.msgType, "enforced options already set correctly");
             }
         }
-        
+
         if (paramsNeeded == 0) {
             return false;
         }
-        
+
         // Resize params array to actual size needed
         if (paramsNeeded < params.length) {
             EnforcedOptionParam[] memory resizedParams = new EnforcedOptionParam[](paramsNeeded);
@@ -650,7 +721,7 @@ contract WireOApp is Script {
             }
             params = resizedParams;
         }
-        
+
         // Set enforced options on the OApp
         IOAppOptionsType3(oapp).setEnforcedOptions(params);
         printAction("Set enforced options");
@@ -662,10 +733,10 @@ contract WireOApp is Script {
         // Get deployments
         Deployment memory srcDeployment = deployments[pathway.srcEid];
         Deployment memory dstDeployment = deployments[pathway.dstEid];
-        
+
         require(srcDeployment.endpointV2.addr != address(0), "Source deployment not found");
         require(dstDeployment.endpointV2.addr != address(0), "Destination deployment not found");
-        
+
         console.log("\n========================================");
         console.log("Wiring pathway (partial):");
         console.log("  From:", pathway.srcEid, "OApp:", pathway.srcOApp);
@@ -673,29 +744,19 @@ contract WireOApp is Script {
         console.log("  Wiring source:", doSource);
         console.log("  Wiring destination:", doDestination);
         console.log("========================================\n");
-        
+
         if (doSource) {
             // Wire source chain (setSendLibrary, setPeer, setEnforcedOptions and send configs for source OApp)
             console.log(">>> Configuring source chain...");
-            wireSourceChain(
-                pathway.srcOApp,
-                pathway,
-                srcDeployment,
-                eidToRpc[pathway.srcEid]
-            );
+            wireSourceChain(pathway.srcOApp, pathway, srcDeployment, eidToRpc[pathway.srcEid]);
         }
-        
+
         if (doDestination) {
             // Wire destination chain (setReceiveLibrary, setPeer and receive configs for destination OApp)
             console.log("\n>>> Configuring destination chain...");
-            wireDestinationChain(
-                pathway.dstOApp,
-                pathway,
-                dstDeployment,
-                eidToRpc[pathway.dstEid]
-            );
+            wireDestinationChain(pathway.dstOApp, pathway, dstDeployment, eidToRpc[pathway.dstEid]);
         }
-        
+
         console.log("\n>>> Pathway configuration complete!");
     }
 
@@ -708,23 +769,25 @@ contract WireOApp is Script {
         // Get deployments
         Deployment memory srcDeployment = deployments[pathway.srcEid];
         Deployment memory dstDeployment = deployments[pathway.dstEid];
-        
+
         console.log("\n--- Configuration Status Check ---");
         console.log("Pathway:", pathway.srcEid, "->", pathway.dstEid);
-        
+
         // Check source chain
         vm.createSelectFork(eidToRpc[pathway.srcEid]);
         ILayerZeroEndpointV2 srcEndpoint = ILayerZeroEndpointV2(srcDeployment.endpointV2.addr);
-        
+
         address srcSendLib = srcEndpoint.getSendLibrary(pathway.srcOApp, pathway.dstEid);
         bytes32 srcPeer = IOAppCore(pathway.srcOApp).peers(pathway.dstEid);
-        
+
         console.log("Source chain status:");
         console.log("  Send library set:", srcSendLib == srcDeployment.sendUln302.addr ? "YES" : "NO");
         console.log("  Peer set:", srcPeer == bytes32(uint256(uint160(pathway.dstOApp))) ? "YES" : "NO");
-        
+
         // Check ULN config on source
-        try srcEndpoint.getConfig(pathway.srcOApp, srcSendLib, pathway.dstEid, ULN_CONFIG_TYPE) returns (bytes memory ulnConfig) {
+        try srcEndpoint.getConfig(pathway.srcOApp, srcSendLib, pathway.dstEid, ULN_CONFIG_TYPE) returns (
+            bytes memory ulnConfig
+        ) {
             console.log("  ULN config set:", ulnConfig.length > 0 ? "YES" : "NO");
             if (ulnConfig.length > 0) {
                 UlnConfig memory uln = abi.decode(ulnConfig, (UlnConfig));
@@ -735,9 +798,11 @@ contract WireOApp is Script {
         } catch {
             console.log("  ULN config set: NO");
         }
-        
+
         // Check Executor config on source
-        try srcEndpoint.getConfig(pathway.srcOApp, srcSendLib, pathway.dstEid, EXECUTOR_CONFIG_TYPE) returns (bytes memory execConfig) {
+        try srcEndpoint.getConfig(pathway.srcOApp, srcSendLib, pathway.dstEid, EXECUTOR_CONFIG_TYPE) returns (
+            bytes memory execConfig
+        ) {
             console.log("  Executor config set:", execConfig.length > 0 ? "YES" : "NO");
             if (execConfig.length > 0) {
                 ExecutorConfig memory exec = abi.decode(execConfig, (ExecutorConfig));
@@ -746,27 +811,30 @@ contract WireOApp is Script {
         } catch {
             console.log("  Executor config set: NO");
         }
-        
+
         // Check enforced options
         for (uint256 i = 0; i < pathway.enforcedOptions.length; i++) {
             EnforcedOptions memory opt = pathway.enforcedOptions[i];
-            bytes memory enforcedOpts = IOAppWithEnforcedOptions(pathway.srcOApp).enforcedOptions(pathway.dstEid, opt.msgType);
+            bytes memory enforcedOpts =
+                IOAppWithEnforcedOptions(pathway.srcOApp).enforcedOptions(pathway.dstEid, opt.msgType);
             console.log("  Enforced options (msgType", opt.msgType, "):", enforcedOpts.length > 0 ? "YES" : "NO");
         }
-        
+
         // Check destination chain
         vm.createSelectFork(eidToRpc[pathway.dstEid]);
         ILayerZeroEndpointV2 dstEndpoint = ILayerZeroEndpointV2(dstDeployment.endpointV2.addr);
-        
-        (address dstReceiveLib, ) = dstEndpoint.getReceiveLibrary(pathway.dstOApp, pathway.srcEid);
+
+        (address dstReceiveLib,) = dstEndpoint.getReceiveLibrary(pathway.dstOApp, pathway.srcEid);
         bytes32 dstPeer = IOAppCore(pathway.dstOApp).peers(pathway.srcEid);
-        
+
         console.log("Destination chain status:");
         console.log("  Receive library set:", dstReceiveLib == dstDeployment.receiveUln302.addr ? "YES" : "NO");
         console.log("  Peer set:", dstPeer == bytes32(uint256(uint160(pathway.srcOApp))) ? "YES" : "NO");
-        
+
         // Check ULN config on destination
-        try dstEndpoint.getConfig(pathway.dstOApp, dstReceiveLib, pathway.srcEid, ULN_CONFIG_TYPE) returns (bytes memory ulnConfig) {
+        try dstEndpoint.getConfig(pathway.dstOApp, dstReceiveLib, pathway.srcEid, ULN_CONFIG_TYPE) returns (
+            bytes memory ulnConfig
+        ) {
             console.log("  ULN config set:", ulnConfig.length > 0 ? "YES" : "NO");
             if (ulnConfig.length > 0) {
                 UlnConfig memory uln = abi.decode(ulnConfig, (UlnConfig));
@@ -777,60 +845,60 @@ contract WireOApp is Script {
         } catch {
             console.log("  ULN config set: NO");
         }
-        
+
         console.log("--- End Status Check ---\n");
     }
 
     /// @notice Pre-flight check to analyze what needs to be configured
     function preflightCheck(PathwayConfig[] memory pathways) internal returns (uint256 needsConfig) {
         console.log("\n  Analyzing configuration status...");
-        
+
         uint256 alreadyConfigured = 0;
-        
+
         for (uint256 i = 0; i < pathways.length; i++) {
             PathwayConfig memory pathway = pathways[i];
             bool isConfigured = isPathwayConfigured(pathway);
-            
+
             if (isConfigured) {
                 alreadyConfigured++;
             } else {
                 needsConfig++;
             }
         }
-        
+
         console.log("\n  Configuration Summary:");
         console.log(string.concat("    Total pathways:      ", vm.toString(pathways.length)));
         console.log(string.concat("    Already configured:  ", vm.toString(alreadyConfigured)));
         console.log(string.concat("    To be configured:    ", vm.toString(needsConfig)));
-        
+
         if (needsConfig == 0) {
             printSuccess("All pathways are already configured!");
         }
-        
+
         return needsConfig;
     }
-    
+
     /// @notice Check if a pathway is fully configured
     function isPathwayConfigured(PathwayConfig memory pathway) internal returns (bool) {
         // Get deployments
         Deployment memory srcDeployment = deployments[pathway.srcEid];
         Deployment memory dstDeployment = deployments[pathway.dstEid];
-        
+
         bool fullyConfigured = true;
-        
+
         // Check verbosity - use VERBOSE env var
         bool verbose = vm.envOr("VERBOSE", false);
-        
+
         console.log(string.concat("\n  Checking: ", chainName(pathway.srcEid), " -> ", chainName(pathway.dstEid)));
-        
+
         if (verbose) {
             console.log("  Source Configuration:");
         }
-        
+
         // Check source chain
         vm.createSelectFork(eidToRpc[pathway.srcEid]);
         ILayerZeroEndpointV2 srcEndpoint = ILayerZeroEndpointV2(srcDeployment.endpointV2.addr);
-        
+
         // Check send library
         address srcSendLib = srcEndpoint.getSendLibrary(pathway.srcOApp, pathway.dstEid);
         bool sendLibMatch = srcSendLib == srcDeployment.sendUln302.addr;
@@ -843,7 +911,7 @@ contract WireOApp is Script {
             }
         }
         if (!sendLibMatch) fullyConfigured = false;
-        
+
         // Check peer
         bytes32 srcPeer = IOAppCore(pathway.srcOApp).peers(pathway.dstEid);
         bytes32 expectedSrcPeer = bytes32(uint256(uint160(pathway.dstOApp)));
@@ -857,18 +925,27 @@ contract WireOApp is Script {
             }
         }
         if (!peerMatch) fullyConfigured = false;
-        
+
         // Check send ULN configuration
         bool ulnMatch = true;
-        try srcEndpoint.getConfig(pathway.srcOApp, srcSendLib, pathway.dstEid, ULN_CONFIG_TYPE) returns (bytes memory currentUlnConfig) {
+        try srcEndpoint.getConfig(pathway.srcOApp, srcSendLib, pathway.dstEid, ULN_CONFIG_TYPE) returns (
+            bytes memory currentUlnConfig
+        ) {
             if (currentUlnConfig.length == 0) {
                 ulnMatch = false;
                 if (verbose || !ulnMatch) {
                     console.log("    ULN Config:");
                     console.log("      Current:  Not configured");
-                    console.log(string.concat("      Expected: Confirmations=", vm.toString(pathway.confirmations), 
-                                             ", RequiredDVNs=", vm.toString(pathway.requiredDVNCount),
-                                             ", OptionalDVNs=", vm.toString(pathway.srcOptionalDVNs.length)));
+                    console.log(
+                        string.concat(
+                            "      Expected: Confirmations=",
+                            vm.toString(pathway.confirmations),
+                            ", RequiredDVNs=",
+                            vm.toString(pathway.requiredDVNCount),
+                            ", OptionalDVNs=",
+                            vm.toString(pathway.srcOptionalDVNs.length)
+                        )
+                    );
                     console.log("      [MISMATCH]");
                 }
             } else {
@@ -881,29 +958,62 @@ contract WireOApp is Script {
                     requiredDVNs: pathway.srcRequiredDVNs,
                     optionalDVNs: pathway.srcOptionalDVNs
                 });
-                
+
                 ulnMatch = isUlnConfigEqual(currentUln, expectedUln);
-                
+
                 if (verbose || !ulnMatch) {
                     console.log("    ULN Config:");
-                    console.log(string.concat("      Confirmations: ", vm.toString(currentUln.confirmations), " (expected: ", vm.toString(expectedUln.confirmations), ")"));
-                    console.log(string.concat("      Required DVNs: ", vm.toString(currentUln.requiredDVNCount), " (expected: ", vm.toString(expectedUln.requiredDVNCount), ")"));
-                    console.log(string.concat("      Optional DVNs: ", vm.toString(currentUln.optionalDVNCount), 
-                                             " threshold=", vm.toString(currentUln.optionalDVNThreshold),
-                                             " (expected: ", vm.toString(expectedUln.optionalDVNCount), 
-                                             " threshold=", vm.toString(expectedUln.optionalDVNThreshold), ")"));
-                    
+                    console.log(
+                        string.concat(
+                            "      Confirmations: ",
+                            vm.toString(currentUln.confirmations),
+                            " (expected: ",
+                            vm.toString(expectedUln.confirmations),
+                            ")"
+                        )
+                    );
+                    console.log(
+                        string.concat(
+                            "      Required DVNs: ",
+                            vm.toString(currentUln.requiredDVNCount),
+                            " (expected: ",
+                            vm.toString(expectedUln.requiredDVNCount),
+                            ")"
+                        )
+                    );
+                    console.log(
+                        string.concat(
+                            "      Optional DVNs: ",
+                            vm.toString(currentUln.optionalDVNCount),
+                            " threshold=",
+                            vm.toString(currentUln.optionalDVNThreshold),
+                            " (expected: ",
+                            vm.toString(expectedUln.optionalDVNCount),
+                            " threshold=",
+                            vm.toString(expectedUln.optionalDVNThreshold),
+                            ")"
+                        )
+                    );
+
                     // Show DVN addresses if they differ
                     if (!areAddressArraysEqual(currentUln.requiredDVNs, expectedUln.requiredDVNs)) {
                         console.log("      Required DVN addresses:");
                         for (uint256 i = 0; i < currentUln.requiredDVNs.length; i++) {
-                            console.log(string.concat("        Current[", vm.toString(i), "]:  ", vm.toString(currentUln.requiredDVNs[i])));
+                            console.log(
+                                string.concat(
+                                    "        Current[", vm.toString(i), "]:  ", vm.toString(currentUln.requiredDVNs[i])
+                                )
+                            );
                         }
                         for (uint256 i = 0; i < expectedUln.requiredDVNs.length; i++) {
-                            console.log(string.concat("        Expected[", vm.toString(i), "]: ", vm.toString(expectedUln.requiredDVNs[i])));
+                            console.log(
+                                string.concat(
+                                    "        Expected[", vm.toString(i), "]: ", vm.toString(expectedUln.requiredDVNs[i])
+                                )
+                            );
                         }
                     }
-                    
+
                     if (!ulnMatch) {
                         console.log("      [MISMATCH]");
                     }
@@ -918,28 +1028,55 @@ contract WireOApp is Script {
             }
         }
         if (!ulnMatch) fullyConfigured = false;
-        
+
         // Check executor configuration
         bool execMatch = true;
-        try srcEndpoint.getConfig(pathway.srcOApp, srcSendLib, pathway.dstEid, EXECUTOR_CONFIG_TYPE) returns (bytes memory currentExecConfig) {
+        try srcEndpoint.getConfig(pathway.srcOApp, srcSendLib, pathway.dstEid, EXECUTOR_CONFIG_TYPE) returns (
+            bytes memory currentExecConfig
+        ) {
             if (currentExecConfig.length == 0) {
                 execMatch = false;
                 if (verbose || !execMatch) {
                     console.log("    Executor Config:");
                     console.log("      Current:  Not configured");
-                    console.log(string.concat("      Expected: MaxMessageSize=", vm.toString(pathway.maxMessageSize), 
-                                             ", Executor=", vm.toString(srcDeployment.executor.addr)));
+                    console.log(
+                        string.concat(
+                            "      Expected: MaxMessageSize=",
+                            vm.toString(pathway.maxMessageSize),
+                            ", Executor=",
+                            vm.toString(srcDeployment.executor.addr)
+                        )
+                    );
                     console.log("      [MISMATCH]");
                 }
             } else {
                 ExecutorConfig memory currentExec = abi.decode(currentExecConfig, (ExecutorConfig));
-                execMatch = (currentExec.maxMessageSize == pathway.maxMessageSize && currentExec.executor == srcDeployment.executor.addr);
-                
+                execMatch = (
+                    currentExec.maxMessageSize == pathway.maxMessageSize
+                        && currentExec.executor == srcDeployment.executor.addr
+                );
+
                 if (verbose || !execMatch) {
                     console.log("    Executor Config:");
-                    console.log(string.concat("      Max Message Size: ", vm.toString(currentExec.maxMessageSize), " (expected: ", vm.toString(pathway.maxMessageSize), ")"));
-                    console.log(string.concat("      Executor: ", vm.toString(currentExec.executor), " (expected: ", vm.toString(srcDeployment.executor.addr), ")"));
-                    
+                    console.log(
+                        string.concat(
+                            "      Max Message Size: ",
+                            vm.toString(currentExec.maxMessageSize),
+                            " (expected: ",
+                            vm.toString(pathway.maxMessageSize),
+                            ")"
+                        )
+                    );
+                    console.log(
+                        string.concat(
+                            "      Executor: ",
+                            vm.toString(currentExec.executor),
+                            " (expected: ",
+                            vm.toString(srcDeployment.executor.addr),
+                            ")"
+                        )
+                    );
+
                     if (!execMatch) {
                         console.log("      [MISMATCH]");
                     }
@@ -954,55 +1091,47 @@ contract WireOApp is Script {
             }
         }
         if (!execMatch) fullyConfigured = false;
-        
+
         // Check enforced options on source OApp
         for (uint256 i = 0; i < pathway.enforcedOptions.length; i++) {
             EnforcedOptions memory opt = pathway.enforcedOptions[i];
-            
+
             // Build expected options based on what's actually set
             bytes memory expectedOptions = OptionsBuilder.newOptions();
-            
+
             // Add lzReceive option if gas is specified
             if (opt.lzReceiveGas > 0) {
-                expectedOptions = OptionsBuilder.addExecutorLzReceiveOption(
-                    expectedOptions,
-                    opt.lzReceiveGas,
-                    opt.lzReceiveValue
-                );
+                expectedOptions =
+                    OptionsBuilder.addExecutorLzReceiveOption(expectedOptions, opt.lzReceiveGas, opt.lzReceiveValue);
             }
-            
+
             // Add lzCompose option if gas is specified
             if (opt.lzComposeGas > 0) {
-                expectedOptions = OptionsBuilder.addExecutorLzComposeOption(
-                    expectedOptions,
-                    opt.lzComposeIndex,
-                    opt.lzComposeGas,
-                    0
-                );
+                expectedOptions =
+                    OptionsBuilder.addExecutorLzComposeOption(expectedOptions, opt.lzComposeIndex, opt.lzComposeGas, 0);
             }
-            
+
             // Add native drop if specified
             if (opt.lzNativeDropAmount > 0 && opt.lzNativeDropRecipient != address(0)) {
                 expectedOptions = OptionsBuilder.addExecutorNativeDropOption(
-                    expectedOptions,
-                    opt.lzNativeDropAmount,
-                    bytes32(uint256(uint160(opt.lzNativeDropRecipient)))
+                    expectedOptions, opt.lzNativeDropAmount, bytes32(uint256(uint160(opt.lzNativeDropRecipient)))
                 );
             }
-            
+
             // Skip if no options were actually added
             if (expectedOptions.length == 1) {
                 continue;
             }
-            
-            bytes memory currentOptions = IOAppWithEnforcedOptions(pathway.srcOApp).enforcedOptions(pathway.dstEid, opt.msgType);
+
+            bytes memory currentOptions =
+                IOAppWithEnforcedOptions(pathway.srcOApp).enforcedOptions(pathway.dstEid, opt.msgType);
             bool optMatch = areOptionsEqual(currentOptions, expectedOptions);
-            
+
             if (verbose || !optMatch) {
                 console.log(string.concat("    Enforced Options (msgType ", vm.toString(opt.msgType), "):"));
                 console.log(string.concat("      Current:  ", vm.toString(currentOptions.length), " bytes"));
                 console.log(string.concat("      Expected: ", vm.toString(expectedOptions.length), " bytes"));
-                
+
                 if (opt.lzReceiveGas > 0) {
                     console.log(string.concat("      Expected lzReceiveGas: ", vm.toString(opt.lzReceiveGas)));
                 }
@@ -1010,26 +1139,33 @@ contract WireOApp is Script {
                     console.log(string.concat("      Expected lzComposeGas: ", vm.toString(opt.lzComposeGas)));
                 }
                 if (opt.lzNativeDropAmount > 0) {
-                    console.log(string.concat("      Expected nativeDrop: ", vm.toString(opt.lzNativeDropAmount), " to ", vm.toString(opt.lzNativeDropRecipient)));
+                    console.log(
+                        string.concat(
+                            "      Expected nativeDrop: ",
+                            vm.toString(opt.lzNativeDropAmount),
+                            " to ",
+                            vm.toString(opt.lzNativeDropRecipient)
+                        )
+                    );
                 }
-                
+
                 if (!optMatch) {
                     console.log("      [MISMATCH]");
                 }
             }
-            
+
             if (!optMatch) fullyConfigured = false;
         }
-        
+
         // Check destination chain
         if (verbose) {
             console.log("\n  Destination Configuration:");
         }
         vm.createSelectFork(eidToRpc[pathway.dstEid]);
         ILayerZeroEndpointV2 dstEndpoint = ILayerZeroEndpointV2(dstDeployment.endpointV2.addr);
-        
+
         // Check receive library
-        (address dstReceiveLib, ) = dstEndpoint.getReceiveLibrary(pathway.dstOApp, pathway.srcEid);
+        (address dstReceiveLib,) = dstEndpoint.getReceiveLibrary(pathway.dstOApp, pathway.srcEid);
         bool recvLibMatch = dstReceiveLib == dstDeployment.receiveUln302.addr;
         if (verbose || !recvLibMatch) {
             console.log("    Receive Library:");
@@ -1040,7 +1176,7 @@ contract WireOApp is Script {
             }
         }
         if (!recvLibMatch) fullyConfigured = false;
-        
+
         // Check peer
         bytes32 dstPeer = IOAppCore(pathway.dstOApp).peers(pathway.srcEid);
         bytes32 expectedDstPeer = bytes32(uint256(uint160(pathway.srcOApp)));
@@ -1054,18 +1190,27 @@ contract WireOApp is Script {
             }
         }
         if (!dstPeerMatch) fullyConfigured = false;
-        
+
         // Check receive ULN configuration
         bool dstUlnMatch = true;
-        try dstEndpoint.getConfig(pathway.dstOApp, dstReceiveLib, pathway.srcEid, ULN_CONFIG_TYPE) returns (bytes memory currentUlnConfig) {
+        try dstEndpoint.getConfig(pathway.dstOApp, dstReceiveLib, pathway.srcEid, ULN_CONFIG_TYPE) returns (
+            bytes memory currentUlnConfig
+        ) {
             if (currentUlnConfig.length == 0) {
                 dstUlnMatch = false;
                 if (verbose || !dstUlnMatch) {
                     console.log("    ULN Config:");
                     console.log("      Current:  Not configured");
-                    console.log(string.concat("      Expected: Confirmations=", vm.toString(pathway.confirmations), 
-                                             ", RequiredDVNs=", vm.toString(pathway.requiredDVNCount),
-                                             ", OptionalDVNs=", vm.toString(pathway.dstOptionalDVNs.length)));
+                    console.log(
+                        string.concat(
+                            "      Expected: Confirmations=",
+                            vm.toString(pathway.confirmations),
+                            ", RequiredDVNs=",
+                            vm.toString(pathway.requiredDVNCount),
+                            ", OptionalDVNs=",
+                            vm.toString(pathway.dstOptionalDVNs.length)
+                        )
+                    );
                     console.log("      [MISMATCH]");
                 }
             } else {
@@ -1078,29 +1223,62 @@ contract WireOApp is Script {
                     requiredDVNs: pathway.dstRequiredDVNs,
                     optionalDVNs: pathway.dstOptionalDVNs
                 });
-                
+
                 dstUlnMatch = isUlnConfigEqual(currentUln, expectedUln);
-                
+
                 if (verbose || !dstUlnMatch) {
                     console.log("    ULN Config:");
-                    console.log(string.concat("      Confirmations: ", vm.toString(currentUln.confirmations), " (expected: ", vm.toString(expectedUln.confirmations), ")"));
-                    console.log(string.concat("      Required DVNs: ", vm.toString(currentUln.requiredDVNCount), " (expected: ", vm.toString(expectedUln.requiredDVNCount), ")"));
-                    console.log(string.concat("      Optional DVNs: ", vm.toString(currentUln.optionalDVNCount), 
-                                             " threshold=", vm.toString(currentUln.optionalDVNThreshold),
-                                             " (expected: ", vm.toString(expectedUln.optionalDVNCount), 
-                                             " threshold=", vm.toString(expectedUln.optionalDVNThreshold), ")"));
-                    
+                    console.log(
+                        string.concat(
+                            "      Confirmations: ",
+                            vm.toString(currentUln.confirmations),
+                            " (expected: ",
+                            vm.toString(expectedUln.confirmations),
+                            ")"
+                        )
+                    );
+                    console.log(
+                        string.concat(
+                            "      Required DVNs: ",
+                            vm.toString(currentUln.requiredDVNCount),
+                            " (expected: ",
+                            vm.toString(expectedUln.requiredDVNCount),
+                            ")"
+                        )
+                    );
+                    console.log(
+                        string.concat(
+                            "      Optional DVNs: ",
+                            vm.toString(currentUln.optionalDVNCount),
+                            " threshold=",
+                            vm.toString(currentUln.optionalDVNThreshold),
+                            " (expected: ",
+                            vm.toString(expectedUln.optionalDVNCount),
+                            " threshold=",
+                            vm.toString(expectedUln.optionalDVNThreshold),
+                            ")"
+                        )
+                    );
+
                     // Show DVN addresses if they differ
                     if (!areAddressArraysEqual(currentUln.requiredDVNs, expectedUln.requiredDVNs)) {
                         console.log("      Required DVN addresses:");
                         for (uint256 i = 0; i < currentUln.requiredDVNs.length; i++) {
-                            console.log(string.concat("        Current[", vm.toString(i), "]:  ", vm.toString(currentUln.requiredDVNs[i])));
+                            console.log(
+                                string.concat(
+                                    "        Current[", vm.toString(i), "]:  ", vm.toString(currentUln.requiredDVNs[i])
+                                )
+                            );
                         }
                         for (uint256 i = 0; i < expectedUln.requiredDVNs.length; i++) {
-                            console.log(string.concat("        Expected[", vm.toString(i), "]: ", vm.toString(expectedUln.requiredDVNs[i])));
+                            console.log(
+                                string.concat(
+                                    "        Expected[", vm.toString(i), "]: ", vm.toString(expectedUln.requiredDVNs[i])
+                                )
+                            );
                         }
                     }
-                    
+
                     if (!dstUlnMatch) {
                         console.log("      [MISMATCH]");
                     }
@@ -1115,19 +1293,60 @@ contract WireOApp is Script {
             }
         }
         if (!dstUlnMatch) fullyConfigured = false;
-        
+
         if (fullyConfigured) {
             console.log("    [OK] Fully configured");
         } else {
             console.log("    [NEEDS CONFIG] Requires configuration");
         }
-        
+
         return fullyConfigured;
     }
 
     // ============================================
     // SECTION 6: JSON PARSING FUNCTIONS
     // ============================================
+    
+    /// @notice Fetch JSON data from API or local file
+    /// @param source The source URL or file path
+    /// @return The JSON string data
+    function fetchJsonData(string memory source) internal returns (string memory) {
+        // Check if it's a URL (starts with http:// or https://)
+        bytes memory sourceBytes = bytes(source);
+        bool isUrl = false;
+        
+        if (sourceBytes.length >= 7) {
+            // Check for "http://" or "https://"
+            if ((sourceBytes[0] == 'h' && sourceBytes[1] == 't' && sourceBytes[2] == 't' && sourceBytes[3] == 'p') &&
+                ((sourceBytes[4] == ':' && sourceBytes[5] == '/' && sourceBytes[6] == '/') ||
+                 (sourceBytes[4] == 's' && sourceBytes[5] == ':' && sourceBytes[6] == '/' && sourceBytes[7] == '/'))) {
+                isUrl = true;
+            }
+        }
+        
+        if (isUrl) {
+            console.log(string.concat("  Fetching from API: ", source));
+            
+            // Use curl to fetch data
+            string[] memory curlCommand = new string[](7);
+            curlCommand[0] = "curl";
+            curlCommand[1] = "-s"; // Silent mode
+            curlCommand[2] = "-X";
+            curlCommand[3] = "GET";
+            curlCommand[4] = source;
+            curlCommand[5] = "-H";
+            curlCommand[6] = "accept: application/json";
+            
+            try vm.ffi(curlCommand) returns (bytes memory result) {
+                return string(result);
+            } catch {
+                revert(string.concat("Failed to fetch data from API: ", source));
+            }
+        } else {
+            console.log(string.concat("  Reading from file: ", source));
+            return vm.readFile(source);
+        }
+    }
 
     /// @notice Parse wire configuration from JSON
     function parseWireConfig(string memory configPath) internal returns (WireConfig memory config) {
@@ -1179,8 +1398,9 @@ contract WireOApp is Script {
     }
     
     /// @notice Parse DVN metadata from LayerZero API JSON
-    function parseDVNMetadata(string memory jsonPath) internal {
-        string memory json = vm.readFile(jsonPath);
+    function parseDVNMetadata(string memory source) internal {
+        // Fetch JSON data from API or file
+        string memory json = fetchJsonData(source);
         
         // Only parse DVN metadata for chains we're actually using
         for (uint256 i = 0; i < configuredChainNames.length; i++) {
@@ -1190,7 +1410,9 @@ contract WireOApp is Script {
             string memory deploymentChainName = mapChainName(chain);
             
             // Try to parse DVNs for this chain
-            try vm.parseJsonKeys(json, string.concat(".", deploymentChainName, ".dvns")) returns (string[] memory dvnAddressList) {
+            try vm.parseJsonKeys(json, string.concat(".", deploymentChainName, ".dvns")) returns (
+                string[] memory dvnAddressList
+            ) {
                 string memory chainPath = string.concat(".", deploymentChainName, ".dvns");
                 
                 for (uint256 j = 0; j < dvnAddressList.length; j++) {
@@ -1212,7 +1434,7 @@ contract WireOApp is Script {
                     } catch {
                         lzReadCompatible = false;
                     }
-                    
+
                     if (!deprecated && !lzReadCompatible) {
                         // Get canonical name
                         string memory canonicalName = vm.parseJsonString(json, string.concat(dvnPath, ".canonicalName"));
@@ -1234,14 +1456,16 @@ contract WireOApp is Script {
         try vm.parseJsonKeys(json, ".dvns") returns (string[] memory dvnNames) {
             for (uint256 i = 0; i < dvnNames.length; i++) {
                 string memory dvnName = dvnNames[i];
-                string memory dvnPath = string.concat(".dvns.", dvnName);
+                // Use bracket notation for DVN names that might contain spaces
+                string memory dvnPath = string.concat(".dvns[\"", dvnName, "\"]");
                 
                 // Get all chains for this DVN
                 string[] memory chainNames = vm.parseJsonKeys(json, dvnPath);
                 
                 for (uint256 j = 0; j < chainNames.length; j++) {
                     string memory chain = chainNames[j];
-                    address dvnAddress = vm.parseJsonAddress(json, string.concat(dvnPath, ".", chain));
+                    // Use bracket notation for the full path
+                    address dvnAddress = vm.parseJsonAddress(json, string.concat(dvnPath, "[\"", chain, "\"]"));
                     dvnAddresses[dvnName][chain] = dvnAddress;
                 }
             }
@@ -1256,7 +1480,9 @@ contract WireOApp is Script {
         // Count the number of pathways
         uint256 pathwayCount = 0;
         while (true) {
-            try vm.parseJsonString(json, string.concat(".pathways[", vm.toString(pathwayCount), "].from")) returns (string memory) {
+            try vm.parseJsonString(json, string.concat(".pathways[", vm.toString(pathwayCount), "].from")) returns (
+                string memory
+            ) {
                 pathwayCount++;
             } catch {
                 break;
@@ -1300,7 +1526,8 @@ contract WireOApp is Script {
         // Parse required DVNs
         uint256 requiredDVNCount = 0;
         while (true) {
-            try vm.parseJsonString(json, string.concat(basePath, ".requiredDVNs[", vm.toString(requiredDVNCount), "]")) returns (string memory) {
+            try vm.parseJsonString(json, string.concat(basePath, ".requiredDVNs[", vm.toString(requiredDVNCount), "]"))
+            returns (string memory) {
                 requiredDVNCount++;
             } catch {
                 break;
@@ -1308,13 +1535,15 @@ contract WireOApp is Script {
         }
         raw.requiredDVNs = new string[](requiredDVNCount);
         for (uint256 i = 0; i < requiredDVNCount; i++) {
-            raw.requiredDVNs[i] = vm.parseJsonString(json, string.concat(basePath, ".requiredDVNs[", vm.toString(i), "]"));
+            raw.requiredDVNs[i] =
+                vm.parseJsonString(json, string.concat(basePath, ".requiredDVNs[", vm.toString(i), "]"));
         }
         
         // Parse optional DVNs
         uint256 optionalDVNCount = 0;
         while (true) {
-            try vm.parseJsonString(json, string.concat(basePath, ".optionalDVNs[", vm.toString(optionalDVNCount), "]")) returns (string memory) {
+            try vm.parseJsonString(json, string.concat(basePath, ".optionalDVNs[", vm.toString(optionalDVNCount), "]"))
+            returns (string memory) {
                 optionalDVNCount++;
             } catch {
                 break;
@@ -1322,13 +1551,15 @@ contract WireOApp is Script {
         }
         raw.optionalDVNs = new string[](optionalDVNCount);
         for (uint256 i = 0; i < optionalDVNCount; i++) {
-            raw.optionalDVNs[i] = vm.parseJsonString(json, string.concat(basePath, ".optionalDVNs[", vm.toString(i), "]"));
+            raw.optionalDVNs[i] =
+                vm.parseJsonString(json, string.concat(basePath, ".optionalDVNs[", vm.toString(i), "]"));
         }
         
         // Parse confirmations array
         uint256 confirmationCount = 0;
         while (true) {
-            try vm.parseJsonUint(json, string.concat(basePath, ".confirmations[", vm.toString(confirmationCount), "]")) returns (uint256) {
+            try vm.parseJsonUint(json, string.concat(basePath, ".confirmations[", vm.toString(confirmationCount), "]"))
+            returns (uint256) {
                 confirmationCount++;
             } catch {
                 break;
@@ -1336,30 +1567,39 @@ contract WireOApp is Script {
         }
         raw.confirmations = new uint64[](confirmationCount);
         for (uint256 i = 0; i < confirmationCount; i++) {
-            raw.confirmations[i] = uint64(vm.parseJsonUint(json, string.concat(basePath, ".confirmations[", vm.toString(i), "]")));
+            raw.confirmations[i] =
+                uint64(vm.parseJsonUint(json, string.concat(basePath, ".confirmations[", vm.toString(i), "]")));
         }
         
         // Parse enforced options array of arrays
         uint256 enforcedOptionsCount = 0;
         bool isOldFormat = false;
-        
+
         // First, try to detect the format
         try vm.parseJsonUint(json, string.concat(basePath, ".enforcedOptions[0][0].lzReceiveGas")) returns (uint256) {
             // New format: array of arrays
-            while (true) {
-                try vm.parseJsonUint(json, string.concat(basePath, ".enforcedOptions[", vm.toString(enforcedOptionsCount), "][0].lzReceiveGas")) returns (uint256) {
-                    enforcedOptionsCount++;
-                } catch {
-                    break;
-                }
+        while (true) {
+                try vm.parseJsonUint(
+                    json,
+                    string.concat(basePath, ".enforcedOptions[", vm.toString(enforcedOptionsCount), "][0].lzReceiveGas")
+                ) returns (uint256) {
+                enforcedOptionsCount++;
+            } catch {
+                break;
             }
+        }
         } catch {
             // Try old format: single array
             try vm.parseJsonUint(json, string.concat(basePath, ".enforcedOptions[0].lzReceiveGas")) returns (uint256) {
                 isOldFormat = true;
                 // Count options in old format
                 while (true) {
-                    try vm.parseJsonUint(json, string.concat(basePath, ".enforcedOptions[", vm.toString(enforcedOptionsCount), "].lzReceiveGas")) returns (uint256) {
+                    try vm.parseJsonUint(
+                        json,
+                        string.concat(
+                            basePath, ".enforcedOptions[", vm.toString(enforcedOptionsCount), "].lzReceiveGas"
+                        )
+                    ) returns (uint256) {
                         enforcedOptionsCount++;
                     } catch {
                         break;
@@ -1369,15 +1609,15 @@ contract WireOApp is Script {
                 // No enforced options
             }
         }
-        
+
         if (isOldFormat) {
             // Old format: convert single array to array of arrays
             raw.enforcedOptions = new EnforcedOptions[][](1);
             raw.enforcedOptions[0] = new EnforcedOptions[](enforcedOptionsCount);
-            
-            for (uint256 i = 0; i < enforcedOptionsCount; i++) {
-                string memory optPath = string.concat(basePath, ".enforcedOptions[", vm.toString(i), "]");
-                
+
+        for (uint256 i = 0; i < enforcedOptionsCount; i++) {
+            string memory optPath = string.concat(basePath, ".enforcedOptions[", vm.toString(i), "]");
+
                 // Try to parse msgType, default to standard message if not specified
                 uint16 msgType;
                 try vm.parseJsonUint(json, string.concat(optPath, ".msgType")) returns (uint256 mt) {
@@ -1386,35 +1626,52 @@ contract WireOApp is Script {
                     // Default to standard message for backward compatibility
                     msgType = MSG_TYPE_STANDARD;
                 }
-                
+
                 raw.enforcedOptions[0][i].msgType = msgType;
-                raw.enforcedOptions[0][i].lzReceiveGas = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveGas")));
-                raw.enforcedOptions[0][i].lzReceiveValue = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveValue")));
-                raw.enforcedOptions[0][i].lzComposeGas = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeGas")));
-                raw.enforcedOptions[0][i].lzComposeIndex = uint16(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeIndex")));
-                raw.enforcedOptions[0][i].lzNativeDropAmount = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzNativeDropAmount")));
-                raw.enforcedOptions[0][i].lzNativeDropRecipient = vm.parseJsonAddress(json, string.concat(optPath, ".lzNativeDropRecipient"));
+                raw.enforcedOptions[0][i].lzReceiveGas =
+                    uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveGas")));
+                raw.enforcedOptions[0][i].lzReceiveValue =
+                    uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveValue")));
+                raw.enforcedOptions[0][i].lzComposeGas =
+                    uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeGas")));
+                raw.enforcedOptions[0][i].lzComposeIndex =
+                    uint16(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeIndex")));
+                raw.enforcedOptions[0][i].lzNativeDropAmount =
+                    uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzNativeDropAmount")));
+                raw.enforcedOptions[0][i].lzNativeDropRecipient =
+                    vm.parseJsonAddress(json, string.concat(optPath, ".lzNativeDropRecipient"));
             }
         } else {
             // New format: array of arrays
             raw.enforcedOptions = new EnforcedOptions[][](enforcedOptionsCount);
-            
+
             for (uint256 i = 0; i < enforcedOptionsCount; i++) {
                 // Count options in this direction
                 uint256 optionCount = 0;
                 while (true) {
-                    try vm.parseJsonUint(json, string.concat(basePath, ".enforcedOptions[", vm.toString(i), "][", vm.toString(optionCount), "].lzReceiveGas")) returns (uint256) {
+                    try vm.parseJsonUint(
+                        json,
+                        string.concat(
+                            basePath,
+                            ".enforcedOptions[",
+                            vm.toString(i),
+                            "][",
+                            vm.toString(optionCount),
+                            "].lzReceiveGas"
+                        )
+                    ) returns (uint256) {
                         optionCount++;
                     } catch {
                         break;
                     }
                 }
-                
+
                 raw.enforcedOptions[i] = new EnforcedOptions[](optionCount);
-                
+
                 for (uint256 j = 0; j < optionCount; j++) {
-                    string memory optPath = string.concat(basePath, ".enforcedOptions[", vm.toString(i), "][", vm.toString(j), "]");
-                    
+                    string memory optPath =
+                        string.concat(basePath, ".enforcedOptions[", vm.toString(i), "][", vm.toString(j), "]");
+
                     // Try to parse msgType, default to standard message if not specified
                     uint16 msgType;
                     try vm.parseJsonUint(json, string.concat(optPath, ".msgType")) returns (uint256 mt) {
@@ -1423,14 +1680,20 @@ contract WireOApp is Script {
                         // Default to standard message for backward compatibility
                         msgType = MSG_TYPE_STANDARD;
                     }
-                    
+
                     raw.enforcedOptions[i][j].msgType = msgType;
-                    raw.enforcedOptions[i][j].lzReceiveGas = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveGas")));
-                    raw.enforcedOptions[i][j].lzReceiveValue = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveValue")));
-                    raw.enforcedOptions[i][j].lzComposeGas = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeGas")));
-                    raw.enforcedOptions[i][j].lzComposeIndex = uint16(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeIndex")));
-                    raw.enforcedOptions[i][j].lzNativeDropAmount = uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzNativeDropAmount")));
-                    raw.enforcedOptions[i][j].lzNativeDropRecipient = vm.parseJsonAddress(json, string.concat(optPath, ".lzNativeDropRecipient"));
+                    raw.enforcedOptions[i][j].lzReceiveGas =
+                        uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveGas")));
+                    raw.enforcedOptions[i][j].lzReceiveValue =
+                        uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzReceiveValue")));
+                    raw.enforcedOptions[i][j].lzComposeGas =
+                        uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeGas")));
+                    raw.enforcedOptions[i][j].lzComposeIndex =
+                        uint16(vm.parseJsonUint(json, string.concat(optPath, ".lzComposeIndex")));
+                    raw.enforcedOptions[i][j].lzNativeDropAmount =
+                        uint128(vm.parseJsonUint(json, string.concat(optPath, ".lzNativeDropAmount")));
+                    raw.enforcedOptions[i][j].lzNativeDropRecipient =
+                        vm.parseJsonAddress(json, string.concat(optPath, ".lzNativeDropRecipient"));
                 }
             }
         }
@@ -1453,7 +1716,7 @@ contract WireOApp is Script {
         pathway.confirmations = raw.confirmations.length > 0 ? raw.confirmations[0] : 15;
         pathway.optionalDVNThreshold = raw.optionalDVNThreshold;
         pathway.maxMessageSize = raw.maxMessageSize;
-        
+
         // Use first set of enforced options for A->B
         if (raw.enforcedOptions.length > 0 && raw.enforcedOptions[0].length > 0) {
             pathway.enforcedOptions = raw.enforcedOptions[0];
@@ -1462,41 +1725,53 @@ contract WireOApp is Script {
             pathway.enforcedOptions = new EnforcedOptions[](1);
             pathway.enforcedOptions[0] = EnforcedOptions({
                 msgType: MSG_TYPE_STANDARD,
-                lzReceiveGas: 200000,
-                lzReceiveValue: 0,
-                lzComposeGas: 0,
-                lzComposeIndex: 0,
-                lzNativeDropAmount: 0,
-                lzNativeDropRecipient: address(0)
-            });
+            lzReceiveGas: 200000,
+            lzReceiveValue: 0,
+            lzComposeGas: 0,
+            lzComposeIndex: 0,
+            lzNativeDropAmount: 0,
+            lzNativeDropRecipient: address(0)
+        });
         }
-        
+
         // Resolve required DVN names to addresses for SOURCE chain (for send config)
         pathway.srcRequiredDVNs = new address[](raw.requiredDVNs.length);
         for (uint256 i = 0; i < raw.requiredDVNs.length; i++) {
             address dvnAddress = dvnAddresses[raw.requiredDVNs[i]][raw.from];
-            
-            require(dvnAddress != address(0), 
-                string.concat("Required DVN '", raw.requiredDVNs[i], "' not found in metadata for source chain '", raw.from, "'"));
+
+            require(
+                dvnAddress != address(0),
+                string.concat(
+                    "Required DVN '", raw.requiredDVNs[i], "' not found in metadata for source chain '", raw.from, "'"
+                )
+            );
             pathway.srcRequiredDVNs[i] = dvnAddress;
         }
-        
+
         // Resolve required DVN names to addresses for DESTINATION chain (for receive config)
         pathway.dstRequiredDVNs = new address[](raw.requiredDVNs.length);
         for (uint256 i = 0; i < raw.requiredDVNs.length; i++) {
             address dvnAddress = dvnAddresses[raw.requiredDVNs[i]][raw.to];
             
-            require(dvnAddress != address(0), 
-                string.concat("Required DVN '", raw.requiredDVNs[i], "' not found in metadata for destination chain '", raw.to, "'"));
+            require(
+                dvnAddress != address(0),
+                string.concat(
+                    "Required DVN '",
+                    raw.requiredDVNs[i],
+                    "' not found in metadata for destination chain '",
+                    raw.to,
+                    "'"
+                )
+            );
             pathway.dstRequiredDVNs[i] = dvnAddress;
         }
         pathway.requiredDVNCount = uint8(pathway.srcRequiredDVNs.length);
-        
+
         // Resolve optional DVN names to addresses for SOURCE chain
         pathway.srcOptionalDVNs = new address[](raw.optionalDVNs.length);
         for (uint256 i = 0; i < raw.optionalDVNs.length; i++) {
             address dvnAddress = dvnAddresses[raw.optionalDVNs[i]][raw.from];
-            
+
             // Optional DVNs can be missing, but log a warning
             if (dvnAddress == address(0)) {
                 console.log("Warning: Optional DVN not found in metadata:", raw.optionalDVNs[i], "on source", raw.from);
@@ -1512,7 +1787,9 @@ contract WireOApp is Script {
             
             // Optional DVNs can be missing, but log a warning
             if (dvnAddress == address(0)) {
-                console.log("Warning: Optional DVN not found in metadata:", raw.optionalDVNs[i], "on destination", raw.to);
+                console.log(
+                    "Warning: Optional DVN not found in metadata:", raw.optionalDVNs[i], "on destination", raw.to
+                );
             }
             
             pathway.dstOptionalDVNs[i] = dvnAddress;
@@ -1535,11 +1812,12 @@ contract WireOApp is Script {
         pathway.dstOApp = toChain.oapp;
         // Use second element for B->A confirmations, or first if only one provided
         // This value is used for both source send config and destination receive config
-        pathway.confirmations = raw.confirmations.length > 1 ? raw.confirmations[1] : 
-                               (raw.confirmations.length > 0 ? raw.confirmations[0] : 15);
+        pathway.confirmations = raw.confirmations.length > 1
+            ? raw.confirmations[1]
+            : (raw.confirmations.length > 0 ? raw.confirmations[0] : 15);
         pathway.optionalDVNThreshold = raw.optionalDVNThreshold;
         pathway.maxMessageSize = raw.maxMessageSize;
-        
+
         // Use second set of enforced options for B->A, or first if only one provided
         if (raw.enforcedOptions.length > 1 && raw.enforcedOptions[1].length > 0) {
             // Use B->A specific options
@@ -1552,41 +1830,53 @@ contract WireOApp is Script {
             pathway.enforcedOptions = new EnforcedOptions[](1);
             pathway.enforcedOptions[0] = EnforcedOptions({
                 msgType: MSG_TYPE_STANDARD,
-                lzReceiveGas: 200000,
-                lzReceiveValue: 0,
-                lzComposeGas: 0,
-                lzComposeIndex: 0,
-                lzNativeDropAmount: 0,
-                lzNativeDropRecipient: address(0)
+            lzReceiveGas: 200000,
+            lzReceiveValue: 0,
+            lzComposeGas: 0,
+            lzComposeIndex: 0,
+            lzNativeDropAmount: 0,
+            lzNativeDropRecipient: address(0)
             });
         }
-        
+
         // Resolve required DVN names to addresses for SOURCE chain (for send config)
         pathway.srcRequiredDVNs = new address[](raw.requiredDVNs.length);
         for (uint256 i = 0; i < raw.requiredDVNs.length; i++) {
             address dvnAddress = dvnAddresses[raw.requiredDVNs[i]][raw.to];
-            
-            require(dvnAddress != address(0), 
-                string.concat("Required DVN '", raw.requiredDVNs[i], "' not found in metadata for source chain '", raw.to, "'"));
+
+            require(
+                dvnAddress != address(0),
+                string.concat(
+                    "Required DVN '", raw.requiredDVNs[i], "' not found in metadata for source chain '", raw.to, "'"
+                )
+            );
             pathway.srcRequiredDVNs[i] = dvnAddress;
         }
-        
+
         // Resolve required DVN names to addresses for DESTINATION chain (for receive config)
         pathway.dstRequiredDVNs = new address[](raw.requiredDVNs.length);
         for (uint256 i = 0; i < raw.requiredDVNs.length; i++) {
             address dvnAddress = dvnAddresses[raw.requiredDVNs[i]][raw.from];
             
-            require(dvnAddress != address(0), 
-                string.concat("Required DVN '", raw.requiredDVNs[i], "' not found in metadata for destination chain '", raw.from, "'"));
+            require(
+                dvnAddress != address(0),
+                string.concat(
+                    "Required DVN '",
+                    raw.requiredDVNs[i],
+                    "' not found in metadata for destination chain '",
+                    raw.from,
+                    "'"
+                )
+            );
             pathway.dstRequiredDVNs[i] = dvnAddress;
         }
         pathway.requiredDVNCount = uint8(pathway.dstRequiredDVNs.length);
-        
+
         // Resolve optional DVN names to addresses for SOURCE chain (raw.to in reverse)
         pathway.srcOptionalDVNs = new address[](raw.optionalDVNs.length);
         for (uint256 i = 0; i < raw.optionalDVNs.length; i++) {
             address dvnAddress = dvnAddresses[raw.optionalDVNs[i]][raw.to];
-            
+
             // Optional DVNs can be missing, but log a warning
             if (dvnAddress == address(0)) {
                 console.log("Warning: Optional DVN not found in metadata:", raw.optionalDVNs[i], "on source", raw.to);
@@ -1602,7 +1892,9 @@ contract WireOApp is Script {
             
             // Optional DVNs can be missing, but log a warning
             if (dvnAddress == address(0)) {
-                console.log("Warning: Optional DVN not found in metadata:", raw.optionalDVNs[i], "on destination", raw.from);
+                console.log(
+                    "Warning: Optional DVN not found in metadata:", raw.optionalDVNs[i], "on destination", raw.from
+                );
             }
             
             pathway.dstOptionalDVNs[i] = dvnAddress;
@@ -1612,16 +1904,9 @@ contract WireOApp is Script {
     }
 
     /// @notice Parse LayerZero deployments from JSON
-    function parseDeployments(string memory jsonPath) internal {
-        string memory json;
-        
-        // Check if it's a URL or file path
-        if (bytes(jsonPath).length > 4 && keccak256(bytes(substring(jsonPath, 0, 4))) == keccak256(bytes("http"))) {
-            // For URL, you'd need to fetch via curl or another method
-            revert("URL fetching not implemented - use local JSON file");
-        } else {
-            json = vm.readFile(jsonPath);
-        }
+    function parseDeployments(string memory source) internal {
+        // Fetch JSON data from API or file
+        string memory json = fetchJsonData(source);
         
         // Only parse deployments for chains we're actually using
         for (uint256 i = 0; i < configuredChainNames.length; i++) {
@@ -1635,7 +1920,10 @@ contract WireOApp is Script {
                 // Count deployments for this chain
                 uint256 deploymentCount = 0;
                 while (true) {
-                    try vm.parseJsonUint(json, string.concat(".", deploymentChainName, ".deployments[", vm.toString(deploymentCount), "].eid")) returns (uint256) {
+                    try vm.parseJsonUint(
+                        json,
+                        string.concat(".", deploymentChainName, ".deployments[", vm.toString(deploymentCount), "].eid")
+                    ) returns (uint256) {
                         deploymentCount++;
                     } catch {
                         break;
@@ -1644,7 +1932,8 @@ contract WireOApp is Script {
                 
                 // Parse each deployment individually
                 for (uint256 j = 0; j < deploymentCount; j++) {
-                    string memory deploymentPath = string.concat(".", deploymentChainName, ".deployments[", vm.toString(j), "]");
+                    string memory deploymentPath =
+                        string.concat(".", deploymentChainName, ".deployments[", vm.toString(j), "]");
                     
                     // Check version first
                     uint256 version = vm.parseJsonUint(json, string.concat(deploymentPath, ".version"));
@@ -1656,10 +1945,14 @@ contract WireOApp is Script {
                         deployment.version = version;
                         
                         // Parse endpoint addresses
-                        deployment.endpointV2.addr = vm.parseJsonAddress(json, string.concat(deploymentPath, ".endpointV2.address"));
-                        deployment.sendUln302.addr = vm.parseJsonAddress(json, string.concat(deploymentPath, ".sendUln302.address"));
-                        deployment.receiveUln302.addr = vm.parseJsonAddress(json, string.concat(deploymentPath, ".receiveUln302.address"));
-                        deployment.executor.addr = vm.parseJsonAddress(json, string.concat(deploymentPath, ".executor.address"));
+                        deployment.endpointV2.addr =
+                            vm.parseJsonAddress(json, string.concat(deploymentPath, ".endpointV2.address"));
+                        deployment.sendUln302.addr =
+                            vm.parseJsonAddress(json, string.concat(deploymentPath, ".sendUln302.address"));
+                        deployment.receiveUln302.addr =
+                            vm.parseJsonAddress(json, string.concat(deploymentPath, ".receiveUln302.address"));
+                        deployment.executor.addr =
+                            vm.parseJsonAddress(json, string.concat(deploymentPath, ".executor.address"));
                         
                         // Store deployment
                         deployments[deployment.eid] = deployment;
@@ -1678,7 +1971,7 @@ contract WireOApp is Script {
         // If we need different mappings, we can add them here
         return chain;
     }
-    
+
     /// @notice Map chain names to their deployment JSON keys for deployment files
     function mapChainNameForDeployment(string memory chain) internal pure returns (string memory) {
         // For deployment JSON, chains are typically stored with the "-mainnet" suffix
@@ -1688,52 +1981,52 @@ contract WireOApp is Script {
     // ============================================
     // SECTION 7: UTILITY FUNCTIONS
     // ============================================
-    
+
     // Console formatting helpers
-    
+
     function printHeader(string memory title) internal pure {
         console.log("");
         console.log(HEADER_LINE);
         console.log(title);
         console.log(HEADER_LINE);
     }
-    
+
     function printSubHeader(string memory title) internal pure {
         console.log("");
         console.log(string.concat(">>> ", title));
         console.log(SUB_LINE);
     }
-    
+
     function printSuccess(string memory message) internal pure {
         console.log(string.concat("  [OK] ", message));
     }
-    
+
     function printSkip(string memory message) internal pure {
         console.log(string.concat("  - ", message));
     }
-    
+
     function printAction(string memory message) internal pure {
         console.log(string.concat("  > ", message));
     }
-    
+
     function printWarning(string memory message) internal pure {
         console.log(string.concat("  ! WARNING: ", message));
     }
-    
+
     function printError(string memory message) internal pure {
         console.log(string.concat("  X ERROR: ", message));
     }
-    
+
     function shortAddress(address addr) internal pure returns (string memory) {
         string memory fullAddr = vm.toString(addr);
         // fullAddr format: "0x1234567890123456789012345678901234567890"
         return string.concat(
-            substring(fullAddr, 0, 6),  // "0x1234"
+            substring(fullAddr, 0, 6), // "0x1234"
             "...",
-            substring(fullAddr, 38, 42)  // "7890"
+            substring(fullAddr, 38, 42) // "7890"
         );
     }
-    
+
     function chainName(uint32 eid) internal pure returns (string memory) {
         if (eid == 30101) return "Ethereum";
         if (eid == 30102) return "BSC";
@@ -1747,7 +2040,7 @@ contract WireOApp is Script {
         if (eid == 40245) return "Base Sepolia";
         return string.concat("Chain-", vm.toString(eid));
     }
-    
+
     /// @notice Helper function to extract substring
     function substring(string memory str, uint256 start, uint256 end) internal pure returns (string memory) {
         bytes memory strBytes = bytes(str);
@@ -1757,17 +2050,17 @@ contract WireOApp is Script {
         }
         return string(result);
     }
-    
+
     /// @notice Compare two ULN configurations
     function isUlnConfigEqual(UlnConfig memory a, UlnConfig memory b) internal pure returns (bool) {
         // Compare basic fields
-        if (a.confirmations != b.confirmations ||
-            a.requiredDVNCount != b.requiredDVNCount ||
-            a.optionalDVNCount != b.optionalDVNCount ||
-            a.optionalDVNThreshold != b.optionalDVNThreshold) {
+        if (
+            a.confirmations != b.confirmations || a.requiredDVNCount != b.requiredDVNCount
+                || a.optionalDVNCount != b.optionalDVNCount || a.optionalDVNThreshold != b.optionalDVNThreshold
+        ) {
             return false;
         }
-        
+
         // Compare required DVN arrays
         if (a.requiredDVNs.length != b.requiredDVNs.length) {
             return false;
@@ -1777,7 +2070,7 @@ contract WireOApp is Script {
                 return false;
             }
         }
-        
+
         // Compare optional DVN arrays
         if (a.optionalDVNs.length != b.optionalDVNs.length) {
             return false;
@@ -1787,10 +2080,10 @@ contract WireOApp is Script {
                 return false;
             }
         }
-        
+
         return true;
     }
-    
+
     /// @notice Compare two bytes arrays for equality
     function areOptionsEqual(bytes memory a, bytes memory b) internal pure returns (bool) {
         if (a.length != b.length) {

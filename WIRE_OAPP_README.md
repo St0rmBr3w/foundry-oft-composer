@@ -74,17 +74,7 @@ The script follows this flow:
 - Private key with ownership of the OApp contracts
 - RPC URLs for each chain
 
-### 2. Download LayerZero Metadata
-
-```bash
-# Mainnet deployments
-curl -o layerzero-deployments.json https://raw.githubusercontent.com/LayerZero-Labs/devtools/main/packages/ua-utils-evm-hardhat/layerzero.mainnet.json
-
-# DVN addresses
-curl -o layerzero-dvns.json https://raw.githubusercontent.com/LayerZero-Labs/layerzero-scan-api/main/deployments/mainnet/dvn.json
-```
-
-### 3. Create Configuration
+### 2. Create Configuration
 
 Create `utils/layerzero.config.json`:
 
@@ -141,15 +131,15 @@ Create `utils/layerzero.config.json`:
 }
 ```
 
-### 4. Check Configuration Status
+### 3. Check Configuration Status
+
+The script automatically fetches LayerZero deployment and DVN data from the official API:
 
 ```bash
 export PRIVATE_KEY=your_private_key_here
 CHECK_ONLY=true forge script script/WireOApp.s.sol:WireOApp \
-  -s "run(string,string,string)" \
+  -s "run(string)" \
   "./utils/layerzero.config.json" \
-  "./layerzero-deployments.json" \
-  "./layerzero-dvns.json" \
   --via-ir -vvv
 ```
 
@@ -157,16 +147,30 @@ For detailed output showing all configuration values:
 
 ```bash
 VERBOSE=true CHECK_ONLY=true forge script script/WireOApp.s.sol:WireOApp \
-  -s "run(string,string,string)" \
+  -s "run(string)" \
   "./utils/layerzero.config.json" \
-  "./layerzero-deployments.json" \
-  "./layerzero-dvns.json" \
   --via-ir -vvv
 ```
 
-### 5. Wire the Pathways
+### 4. Wire the Pathways
 
 ```bash
+forge script script/WireOApp.s.sol:WireOApp \
+  -s "run(string)" \
+  "./utils/layerzero.config.json" \
+  --via-ir --broadcast --multi -vvv
+```
+
+### Using Local Files (Optional)
+
+If you prefer to use local files or need to work offline:
+
+```bash
+# Download files first
+curl -o layerzero-deployments.json https://metadata.layerzero-api.com/v1/metadata/deployments
+curl -o layerzero-dvns.json https://metadata.layerzero-api.com/v1/metadata/dvns
+
+# Use with local files
 forge script script/WireOApp.s.sol:WireOApp \
   -s "run(string,string,string)" \
   "./utils/layerzero.config.json" \
@@ -235,6 +239,33 @@ Each pathway defines a unidirectional communication channel:
 - **Optional DVNs**: Additional validators for enhanced security
 - DVN addresses are automatically resolved from metadata
 
+#### Custom DVN Overrides
+You can specify custom DVN addresses that override the default metadata:
+
+```json
+{
+  "chains": { ... },
+  "pathways": [ ... ],
+  "dvns": {
+    "My Custom DVN": {
+      "base": "0x1111111111111111111111111111111111111111",
+      "arbitrum": "0x2222222222222222222222222222222222222222"
+    },
+    "Another DVN": {
+      "base": "0x3333333333333333333333333333333333333333",
+      "arbitrum": "0x4444444444444444444444444444444444444444"
+    }
+  }
+}
+```
+
+Then reference your custom DVN in pathways:
+```json
+"requiredDVNs": ["My Custom DVN", "LayerZero Labs"]
+```
+
+**Note**: Custom DVN names can contain spaces. The script will properly handle them.
+
 #### Confirmations
 - Array format: `[A→B, B→A]`
 - Different chains need different confirmations based on finality
@@ -259,18 +290,14 @@ For large deployments or to avoid nonce issues:
 ```bash
 # Wire source chains only
 forge script script/WireOApp.s.sol:WireOApp \
-  -s "runSourceOnly(string,string,string)" \
+  -s "runSourceOnly(string)" \
   "./utils/layerzero.config.json" \
-  "./layerzero-deployments.json" \
-  "./layerzero-dvns.json" \
   --via-ir --broadcast --multi -vvv
 
 # Wire destination chains only  
 forge script script/WireOApp.s.sol:WireOApp \
-  -s "runDestinationOnly(string,string,string)" \
+  -s "runDestinationOnly(string)" \
   "./utils/layerzero.config.json" \
-  "./layerzero-deployments.json" \
-  "./layerzero-dvns.json" \
   --via-ir --broadcast --multi -vvv
 ```
 
@@ -289,6 +316,42 @@ Add custom DVN addresses in your config:
     }
   }
 }
+```
+
+**Use Cases for Custom DVNs:**
+- Testing with your own DVN implementation
+- Using private or permissioned DVNs
+- Overriding deprecated DVN addresses
+- Using DVNs not yet in the official metadata
+
+**Important Notes:**
+- Custom DVN addresses override any addresses from the API/metadata
+- DVN names can contain spaces and special characters
+- You must provide addresses for all chains used in your pathways
+- The script will error if a required DVN is not found for a chain
+
+### Using Custom API Endpoints
+
+If you're running your own LayerZero metadata API or using a different source:
+
+```json
+{
+  "deploymentsSource": "https://my-api.example.com/deployments",
+  "dvnsSource": "./local-dvns.json",
+  "chains": { ... },
+  "pathways": [ ... ]
+}
+```
+
+Or specify them as script parameters:
+
+```bash
+forge script script/WireOApp.s.sol:WireOApp \
+  -s "run(string,string,string)" \
+  "./utils/layerzero.config.json" \
+  "https://my-api.example.com/deployments" \
+  "./local-dvns.json" \
+  --via-ir --broadcast --multi -vvv
 ```
 
 ### Multi-Chain Example
@@ -409,7 +472,16 @@ This will be automatically converted to the new format and applied to both direc
    - Ensure sufficient native tokens for gas
    - Check RPC URL rate limits
 
-4. **Nonce issues**
+4. **API connection issues**
+   - Check internet connectivity
+   - Verify API endpoints are accessible
+   - Use local files as fallback:
+   ```bash
+   curl -o deployments.json https://metadata.layerzero-api.com/v1/metadata/deployments
+   curl -o dvns.json https://metadata.layerzero-api.com/v1/metadata/dvns
+   ```
+
+5. **Nonce issues**
    - Use `--slow` flag or wire chains separately
    - Wait between transactions on same chain
 

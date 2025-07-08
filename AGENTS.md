@@ -1,131 +1,112 @@
-# AGENTS.md - Foundry Vanilla OFT Example
+# Foundry Vanilla Project - Agent Instructions
 
-This file provides specific guidance for AI agents working on the **foundry-vanilla** LayerZero OFT example project.
+This directory contains a Foundry-based LayerZero OApp project with scripts for deployment and configuration.
 
-## Project Overview
+## Key Scripts
 
-This is a **Foundry-based** example demonstrating LayerZero V2 Omnichain Fungible Tokens (OFT) with:
-- Automated address resolution from LayerZero metadata
-- JSON-based configuration files
-- Three-step workflow: deploy → wire → send
-- Pure Solidity scripts (no external dependencies)
+### 1. DeployMyOFT.s.sol
+- Deploys the MyOFT contract across multiple chains
+- Uses the deploy configuration from `utils/deploy.config.json`
+- Automatically wires pathways after deployment if specified
 
-## Key Implementation Details
+### 2. WireOApp.s.sol
+- Configures LayerZero pathways between deployed OApps
+- Supports both API and local file sources for LayerZero metadata
+- Features:
+  - **Automatic API Integration**: Fetches deployment and DVN data from LayerZero's official APIs by default
+  - **Flexible Data Sources**: Can use API endpoints or local JSON files
+  - **Check-Only Mode**: Verify configuration without making changes
+  - **Verbose Mode**: Detailed configuration comparison output
+  - **Partial Wiring**: Configure source or destination chains separately
 
-### Configuration Files
-- **`utils/deploy.config.json`**: Token deployment configuration using chain names
-- **`utils/layerzero.config.json`**: Pathway wiring configuration using chain names
-- **`layerzero-deployments.json`**: Downloaded LayerZero contract addresses
-- **`layerzero-dvns.json`**: Downloaded DVN metadata
+#### API Integration
+The script now automatically fetches data from:
+- Deployments: `https://metadata.layerzero-api.com/v1/metadata/deployments`
+- DVNs: `https://metadata.layerzero-api.com/v1/metadata/dvns`
 
-### Scripts
-- **`script/DeployMyOFT.s.sol`**: Deploys OFT to multiple chains
-- **`script/WireOApp.s.sol`**: Configures LayerZero pathways between OApps
-- **`script/SendOFT.s.sol`**: Sends tokens cross-chain
+You can override these in your config or via command line parameters.
 
-### Key Features
-- Uses **chain names** (not chain IDs) in configuration files
-- Automatically resolves LayerZero addresses from metadata
-- Supports bidirectional pathway configuration
-- Includes partial wiring functions for large deployments
-- Provides check-only mode for validation
+#### Usage Examples
+```bash
+# Simple usage (uses default APIs)
+forge script script/WireOApp.s.sol:WireOApp \
+  --sig "run(string)" \
+  "layerzero.config.json" \
+  --via-ir --broadcast --multi -vvv --ffi
 
-## Agent Guidelines
+# With custom sources
+forge script script/WireOApp.s.sol:WireOApp \
+  --sig "run(string,string,string)" \
+  "layerzero.config.json" \
+  "https://my-api.com/deployments" \
+  "./local-dvns.json" \
+  --via-ir --broadcast --multi -vvv --ffi
 
-### When Making Changes
+# Check-only mode with verbose output
+VERBOSE=true CHECK_ONLY=true forge script script/WireOApp.s.sol:WireOApp \
+  --sig "run(string)" \
+  "layerzero.config.json" \
+  --via-ir -vvv --ffi
+```
 
-1. **Configuration Files**: Always use chain names (e.g., "base", "arbitrum") not chain IDs
-2. **Script Parameters**: Maintain the current parameter structure and order
-3. **Console Output**: Use the existing ConsoleUtils library for consistent formatting
-4. **Error Handling**: Follow the existing pattern of detailed error messages
+**Note**: The `--ffi` flag is required for API calls via curl.
 
-### Documentation Updates
+### 3. SendOFT.s.sol
+- Sends OFT tokens across chains
+- Useful for testing deployed and wired OApps
 
-When updating README files:
-1. Follow the LayerZero example best practices structure
-2. Use the exact section headings from the template
-3. Link to LayerZero documentation for concepts
-4. Include practical examples with real addresses
-5. Maintain consistency across all README files
+### 4. lib/ChainConfig.sol
+- Contains chain configurations and helper functions
+- Maps chain IDs to names and RPC URLs
 
-### Code Style
+## Configuration Files
 
-- Use Foundry's `vm.parseJson*` functions for JSON parsing
-- Follow Solidity best practices for gas optimization
-- Include comprehensive error messages
-- Use the ConsoleUtils library for formatted output
+### utils/deploy.config.json
+- Specifies which chains to deploy to
+- Can include automatic wiring configuration
 
-### Testing
+### utils/layerzero.config.json
+- Defines OApp addresses and pathway configurations
+- Supports bidirectional pathways
+- Can specify custom API endpoints or local file paths
+- Supports flexible enforced options for different message types
 
-- Ensure all scripts compile without warnings
-- Test configuration parsing with sample JSON files
-- Verify address resolution works correctly
-- Check that console output is properly formatted
-
-## Common Patterns
-
-### JSON Configuration Structure
+Example with API sources:
 ```json
 {
-  "chains": {
-    "chainName": {
-      "eid": 30184,
-      "rpc": "https://rpc.url",
-      "signer": "WILL_USE_PRIVATE_KEY",
-      "oapp": "0x..."
-    }
-  },
-  "pathways": [
-    {
-      "from": "chainName",
-      "to": "chainName",
-      "requiredDVNs": ["LayerZero Labs"],
-      "confirmations": [3, 5],
-      "enforcedOptions": [...]
-    }
-  ]
+  "deploymentsSource": "https://metadata.layerzero-api.com/v1/metadata/deployments",
+  "dvnsSource": "./custom-dvns.json",
+  "chains": { ... },
+  "pathways": [ ... ]
 }
 ```
 
-### Script Function Signatures
-```solidity
-function run(string memory configPath, string memory deploymentJsonPath, string memory dvnJsonPath) external
-function runSourceOnly(string memory configPath, string memory deploymentJsonPath, string memory dvnJsonPath) external
-function runDestinationOnly(string memory configPath, string memory deploymentJsonPath, string memory dvnJsonPath) external
-```
+## Important Notes
 
-### Console Output Format
-```solidity
-printHeader("LAYERZERO WIRE SCRIPT");
-printSubHeader("Configuring Pathways");
-printSuccess("Pathway configured successfully");
-printWarning("Optional DVN not found");
-printError("Required DVN not found");
-```
+1. **Environment Variables**:
+   - `PRIVATE_KEY`: Required for all deployment and configuration operations
+   - `CHECK_ONLY`: Set to true for dry-run mode
+   - `VERBOSE`: Set to true for detailed output
+   - `MAINNET`: Set to true for mainnet operations (some scripts)
 
-## Troubleshooting Guide
+2. **FFI Requirement**: When using API features, you must include the `--ffi` flag in your forge commands
 
-### Common Issues
-1. **DVN Resolution**: Ensure DVN names match exactly from metadata
-2. **Nonce Issues**: Use `--slow` flag or partial wiring functions
-3. **Configuration**: Validate JSON structure before running scripts
-4. **Address Format**: Use bytes32 format for recipients in SendOFT
+3. **Via-IR Compilation**: The WireOApp script requires `--via-ir` flag due to contract size
 
-### Validation Commands
-```bash
-# Check configuration without making changes
-CHECK_ONLY=true forge script script/WireOApp.s.sol:WireOApp ...
+4. **Multi-Chain Broadcasting**: Use `--multi` flag when configuring multiple chains
 
-# Validate JSON structure
-jq . utils/layerzero.config.json
+5. **Error Handling**: The script provides detailed error messages for common issues like missing DVNs or deployment data
 
-# Check script compilation
-forge build --via-ir
-```
+## Development Workflow
 
-## References
+1. Deploy OApps using `DeployMyOFT.s.sol`
+2. Configure pathways using `WireOApp.s.sol` (automatic API integration)
+3. Test with `SendOFT.s.sol`
+4. Monitor on LayerZero Scan
 
-- [LayerZero V2 Documentation](https://docs.layerzero.network/v2)
-- [Foundry Book](https://book.getfoundry.sh/)
-- [LayerZero Glossary](https://docs.layerzero.network/v2/home/glossary)
-- [OFT Quickstart](https://docs.layerzero.network/v2/home/token-standards/oft-quickstart) 
+## Troubleshooting
+
+- **API Connection Issues**: The script will automatically fall back to local files if specified
+- **DVN Not Found**: Check the exact spelling of DVN names in your config
+- **Compilation Issues**: Ensure you're using `--via-ir` flag for large contracts
+- **FFI Errors**: Make sure to include `--ffi` flag when using API features 
