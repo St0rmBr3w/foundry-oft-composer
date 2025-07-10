@@ -10,7 +10,7 @@
 
 # LayerZero OFT Example with Foundry
 
-Deploy and use Omnichain Fungible Tokens (OFT) with LayerZero V2 using Foundry. This example demonstrates a complete **deploy → wire → send** workflow with automated address resolution from LayerZero metadata.
+Deploy and use Omnichain Fungible Tokens (OFT) with LayerZero V2 using Foundry. This example demonstrates a complete **deploy → wire → send** workflow with a simplified configuration system that automatically manages deployment artifacts and RPC endpoints.
 
 ## Table of Contents
 
@@ -21,15 +21,20 @@ Deploy and use Omnichain Fungible Tokens (OFT) with LayerZero V2 using Foundry. 
   - [Setup](#setup)
   - [Build](#build)
   - [Deploy](#deploy)
+    - [Deployment Configuration](#deployment-configuration)
   - [Enable Messaging](#enable-messaging)
+    - [Wire Configuration](#wire-configuration)
+    - [Configuration Options](#configuration-options)
+    - [Advanced Features](#advanced-features)
   - [Sending OFT](#sending-oft)
+  - [Complete Workflow Example](#complete-workflow-example)
   - [Next Steps](#next-steps)
   - [Production Deployment Checklist](#production-deployment-checklist)
   - [Appendix](#appendix)
     - [Running Tests](#running-tests)
     - [Adding Other Chains](#adding-other-chains)
     - [Using Multisigs](#using-multisigs)
-    - [LayerZero Hardhat Helper Tasks (detailed)](#layerzero-hardhat-helper-tasks-detailed)
+    - [LayerZero Script Functions](#layerzero-script-functions)
     - [Contract Verification](#contract-verification)
     - [Troubleshooting](#troubleshooting)
 
@@ -56,30 +61,25 @@ cd foundry-vanilla
 forge install
 ```
 
-2. **Configure environment:**
+2. **Configure environment variables:**
 ```bash
-cp .env.example .env
+# Copy the example environment file
+cp env.example .env
+
 # Edit .env with your private key and RPC URLs
+# See RPC_SETUP.md for detailed RPC configuration
 ```
 
-3. **LayerZero metadata (Optional):**
-
-The WireOApp script automatically fetches LayerZero deployment and DVN data from the official APIs. However, if you prefer to use local files or work offline, you can download them:
-
+3. **Load environment variables:**
 ```bash
-# Optional: Download metadata files locally
-./utils/download-deployments.sh
+source .env
 ```
-
-This downloads:
-- `layerzero-deployments.json` - LayerZero contract addresses
-- `layerzero-dvns.json` - DVN configurations
-
-**Note:** When using the API feature (default), you must include the `--ffi` flag in your forge commands.
 
 4. **Update configuration files:**
-   - Edit `utils/deploy.config.json` with your token details and chain info
-   - Edit `utils/layerzero.config.json` with your deployed OApp addresses and pathway settings
+   - Edit `utils/deploy.config.simple.json` with your token details
+   - Create `utils/layerzero.config.json` for pathway configuration (see examples below)
+
+**Note:** The new system uses environment variables for RPCs and automatically loads contract addresses from deployment artifacts. See [RPC_SETUP.md](RPC_SETUP.md) for detailed RPC configuration instructions.
 
 ## Build
 
@@ -89,7 +89,7 @@ forge build --via-ir
 
 ## Deploy
 
-Deploy your OFT to multiple chains:
+Deploy your OFT to multiple chains using the deployment script:
 
 ```bash
 forge script script/DeployMyOFT.s.sol:DeployMyOFT \
@@ -100,51 +100,213 @@ forge script script/DeployMyOFT.s.sol:DeployMyOFT \
 
 This script:
 - Reads your token configuration from `deploy.config.json`
-- Automatically looks up LayerZero endpoint addresses from downloaded metadata
-- Deploys MyOFT to all specified chains
-- Saves deployment addresses to `deployments/` directory
+- Uses RPC URLs from environment variables (e.g., `BASE_RPC`, `ARBITRUM_RPC`)
+- Deploys MyOFT to all specified chains one at a time (avoids nonce issues)
+- Saves deployment addresses in two formats:
+  - Legacy: `deployments/myoft-deployments.json`
+  - Standardized: `deployments/{environment}/MyOFT.json`
 
-**Helper Tasks:** See [LayerZero Hardhat Helper Tasks](#layerzero-hardhat-helper-tasks-detailed) for additional deployment options.
+### Deployment Configuration
+
+Create `utils/deploy.config.json`:
+
+```json
+{
+  "tokenName": "My Omnichain Token",
+  "tokenSymbol": "MYOFT",
+  "chains": [
+    {
+      "name": "base",
+      "eid": 30184,
+      "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
+    },
+    {
+      "name": "arbitrum",
+      "eid": 30110,
+      "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
+    }
+  ]
+}
+```
+
+**Note:** RPC URLs are loaded from environment variables (e.g., `BASE_RPC`, `ARBITRUM_RPC`), not from the config file.
 
 ## Enable Messaging
 
-Wire LayerZero pathways between your deployed OApps:
+Wire LayerZero pathways between your deployed OApps using the batched script (recommended for multi-chain deployments):
 
 ```bash
-# Using automatic API fetching (recommended)
-forge script script/WireOApp.s.sol:WireOApp \
-  -s "run(string)" \
-  "./utils/layerzero.config.json" \
-  --broadcast --slow --multi --via-ir --ffi -vvv
-```
+# Check current configuration status
+CHECK_ONLY=true forge script script/BatchedWireOApp.s.sol:BatchedWireOApp \
+  --sig "run(string)" \
+  "utils/layerzero.config.json" \
+  --via-ir --ffi -vvv
 
-Or if using local metadata files:
-
-```bash
-# Using local files
-forge script script/WireOApp.s.sol:WireOApp \
-  -s "run(string,string,string)" \
-  "./utils/layerzero.config.json" \
-  "./layerzero-deployments.json" \
-  "./layerzero-dvns.json" \
-  --broadcast --slow --multi --via-ir -vvv
+# Configure pathways
+forge script script/BatchedWireOApp.s.sol:BatchedWireOApp \
+  --sig "run(string)" \
+  "utils/layerzero.config.json" \
+  --broadcast --multi --via-ir --ffi -vvv
 ```
 
 This script:
 - Reads your pathway configuration from `layerzero.config.json`
-- Automatically fetches or loads LayerZero deployment and DVN data
+- Automatically loads contract addresses from deployment artifacts
+- Uses RPC URLs from environment variables
+- Fetches LayerZero deployment and DVN data from APIs
+- Batches transactions by chain to avoid nonce issues
 - Sets up peers between OApps on different chains
 - Configures security settings (DVNs, confirmations)
 - Sets enforced gas options for cross-chain messages
 
-> **Note:** Use `--slow` flag to avoid nonce issues when configuring multiple chains. The `--ffi` flag is required when using API fetching.
+### LayerZero Configuration
 
-**Helper Tasks:** See [LayerZero Hardhat Helper Tasks](#layerzero-hardhat-helper-tasks-detailed) for partial wiring options.
+Create `utils/layerzero.config.json` using the new simplified format:
+
+```json
+{
+  "deployment": "deployments/mainnet/MyOFT.json",
+  
+  "overrides": {
+    "ethereum": "0xNEW_ADDRESS"  // Optional: override deployment address
+  },
+  
+  "pathways": [
+    {
+      "from": "ethereum",
+      "to": "arbitrum",
+      "requiredDVNs": ["LayerZero Labs", "Google Cloud"],
+      "optionalDVNs": ["Nethermind"],
+      "optionalDVNThreshold": 1,
+      "confirmations": [15, 10],
+      "maxMessageSize": 10000,
+      "enforcedOptions": [
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 250000
+          }
+        ],
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 200000
+          }
+        ]
+      ]
+    }
+  ],
+  
+  "bidirectional": true
+}
+```
+
+### Configuration Options
+
+#### Deployment Reference
+- `deployment`: Path to deployment artifact (auto-generated by deploy script)
+- `overrides`: Optional address overrides for specific chains
+
+#### Pathway Settings
+- `requiredDVNs`: Security validators that must verify every message
+- `optionalDVNs`: Additional validators for enhanced security
+- `optionalDVNThreshold`: How many optional DVNs must verify
+- `confirmations`: Block confirmations [A→B, B→A] or single value for both
+- `maxMessageSize`: Maximum message size in bytes
+- `enforcedOptions`: Gas and execution settings per direction
+
+#### Enforced Options
+Configure different message types with specific options:
+
+```json
+"enforcedOptions": [
+  [  // A→B direction
+    {
+      "msgType": 1,                    // Standard message
+      "lzReceiveGas": 250000,          // Gas for lzReceive
+      "lzReceiveValue": 0,             // Value to send
+      "lzComposeGas": 500000,          // Gas for composed messages
+      "lzComposeIndex": 0,             // Compose index
+      "lzNativeDropAmount": 1000000,   // Native token drop
+      "lzNativeDropRecipient": "0x..." // Drop recipient
+    }
+  ],
+  [  // B→A direction (only used with bidirectional: true)
+    {
+      "msgType": 1,
+      "lzReceiveGas": 200000
+    }
+  ]
+]
+```
+
+### Advanced Features
+
+#### Custom DVN Overrides
+Add custom DVN addresses in your config:
+
+```json
+{
+  "deployment": "deployments/mainnet/MyOFT.json",
+  "pathways": [...],
+  "dvns": {
+    "My Custom DVN": {
+      "ethereum": "0xCustomDVNAddressOnEthereum",
+      "arbitrum": "0xCustomDVNAddressOnArbitrum"
+    }
+  }
+}
+```
+
+#### Partial Wiring
+For large deployments or to avoid nonce issues:
+
+```bash
+# Wire source chains only
+forge script script/BatchedWireOApp.s.sol:BatchedWireOApp \
+  --sig "runSourceOnly(string)" \
+  "utils/layerzero.config.json" \
+  --broadcast --multi --via-ir --ffi -vvv
+
+# Wire destination chains only
+forge script script/BatchedWireOApp.s.sol:BatchedWireOApp \
+  --sig "runDestinationOnly(string)" \
+  "utils/layerzero.config.json" \
+  --broadcast --multi --via-ir --ffi -vvv
+```
+
+> **Note:** The `--ffi` flag is required for API fetching. The `--multi` flag enables multi-chain deployment mode.
 
 ## Sending OFT
 
-Send tokens cross-chain using the deployed OFT:
+Send tokens cross-chain using the deployed OFT with chain names:
 
+### List Available Chains
+```bash
+forge script script/SendOFT.s.sol:SendOFT \
+  --sig "listChains(string)" \
+  "deployments/mainnet/MyOFT.json" \
+  --via-ir
+```
+
+### Send Using Chain Names (Recommended)
+```bash
+forge script script/SendOFT.s.sol:SendOFT \
+  --sig "sendWithChainNames(string,string,string,bytes32,uint256,uint256,bytes,bytes,bytes)" \
+  "deployments/mainnet/MyOFT.json" \  # Deployment artifact path
+  "base" \                            # Source chain name
+  "arbitrum" \                        # Destination chain name
+  0x000000000000000000000000ed422098669cBB60CAAf26E01485bAFdbAF9eBEA \ # Recipient (bytes32)
+  1000000000000000000 \               # Amount (1 token = 1e18 wei)
+  0 \                                 # Min amount (slippage)
+  0x \                                # Extra options
+  0x \                                # Compose message
+  0x \                                # OFT command
+  --broadcast \
+  -vvv --rpc-url $BASE_RPC --via-ir
+```
+
+### Send Using Manual Addresses (Legacy)
 ```bash
 forge script script/SendOFT.s.sol:SendOFT \
   --sig "send(address,uint32,bytes32,uint256,uint256,bytes,bytes,bytes)" \
@@ -160,21 +322,63 @@ forge script script/SendOFT.s.sol:SendOFT \
   -vvv --rpc-url $RPC_URL --via-ir
 ```
 
-**Example sending from Base to Arbitrum:**
+**Note:** The new `sendWithChainNames` function automatically loads OFT addresses and endpoint IDs from your deployment artifacts, making cross-chain transfers much easier.
+
+## Complete Workflow Example
+
+Here's a complete end-to-end example:
+
+### 0. Environment Setup
 ```bash
+# Set up environment variables
+export PRIVATE_KEY="0xYOUR_PRIVATE_KEY"
+export ETHEREUM_RPC="https://eth-mainnet.g.alchemy.com/v2/YOUR_KEY"
+export ARBITRUM_RPC="https://arb-mainnet.g.alchemy.com/v2/YOUR_KEY"
+export BASE_RPC="https://base-mainnet.g.alchemy.com/v2/YOUR_KEY"
+export OPTIMISM_RPC="https://opt-mainnet.g.alchemy.com/v2/YOUR_KEY"
+```
+
+### 1. Deploy Contracts
+```bash
+# Deploy to multiple chains
+forge script script/DeployMyOFT.s.sol:DeployMyOFT \
+  --sig "run(string)" \
+  "utils/deploy.config.json" \
+  --via-ir --broadcast
+```
+
+### 2. Wire Pathways
+```bash
+# Check current configuration
+CHECK_ONLY=true forge script script/BatchedWireOApp.s.sol:BatchedWireOApp \
+  --sig "run(string)" \
+  "utils/layerzero.config.json" \
+  --via-ir --ffi -vvv
+
+# Configure pathways
+forge script script/BatchedWireOApp.s.sol:BatchedWireOApp \
+  --sig "run(string)" \
+  "utils/layerzero.config.json" \
+  --broadcast --multi --via-ir --ffi -vvv
+```
+
+### 3. Send Cross-Chain
+```bash
+# Send tokens from Base to Arbitrum
+OFT_ADDRESS=$(jq -r '.chains.base.address' deployments/mainnet/MyOFT.json)
+
 forge script script/SendOFT.s.sol:SendOFT \
   --sig "send(address,uint32,bytes32,uint256,uint256,bytes,bytes,bytes)" \
-  0x520e5A32984b1e378f0A1C478C4cE083275643DC \
+  $OFT_ADDRESS \
   30110 \
-  0x000000000000000000000000ed422098669cBB60CAAf26E01485bAFdbAF9eBEA \
-  15000000000000 \
+  0x000000000000000000000000YOUR_RECIPIENT_ADDRESS \
+  1000000000000000000 \
   0 \
   0x \
   0x \
   0x \
   --broadcast \
-  -vvv --rpc-url $RPC_URL --via-ir
-```
+  -vvv --rpc-url $BASE_RPC --via-ir
 
 ## Next Steps
 
@@ -215,13 +419,21 @@ forge test --via-ir -vvv
 
 For multisig deployments, modify the scripts to use your multisig address instead of the private key signer. The configuration files remain the same.
 
-### LayerZero Hardhat Helper Tasks (detailed)
+### LayerZero Script Functions
 
-The project includes several helper functions in `WireOApp.s.sol`:
+The project includes several helper functions:
 
-- `runSourceOnly()` - Wire only source chain configurations
-- `runDestinationOnly()` - Wire only destination chain configurations
-- `preflightCheck()` - Check current configuration status
+**DeployMyOFT.s.sol:**
+- `run(string)` - Deploy to all configured chains (one at a time to avoid nonce issues)
+
+**BatchedWireOApp.s.sol:**
+- `run(string)` - Wire all pathways with batching
+- `runSourceOnly(string)` - Wire only source chain configurations
+- `runDestinationOnly(string)` - Wire only destination chain configurations
+- `runWithSources(string, string, string)` - Wire with custom deployment/DVN sources
+
+**SendOFT.s.sol:**
+- `send(address, uint32, bytes32, uint256, uint256, bytes, bytes, bytes)` - Send tokens cross-chain
 
 **Built-in Foundry tasks:**
 - `forge script` - Run deployment and configuration scripts
@@ -237,10 +449,16 @@ Verify your deployments on block explorers:
 
 ### Troubleshooting
 
+**"RPC not found for chain"**
+- Ensure environment variable is set (e.g., `ETHEREUM_RPC`)
+- Check variable name matches chain name (uppercase + "_RPC")
+- Source your `.env` file: `source .env`
+
 **"DVN not found"**
-- Ensure DVN name matches exactly from `layerzero-dvns.json`
+- Ensure DVN name matches exactly from LayerZero API
 - Check DVN is available on your chain
 - Verify DVN isn't deprecated
+- Use custom DVN overrides if needed
 
 **"Insufficient fee"**
 - Increase gas limits in enforced options
@@ -248,9 +466,18 @@ Verify your deployments on block explorers:
 - Check if options are properly encoded
 
 **Nonce issues**
-- Use `--slow` flag for multi-chain operations
+- Use `BatchedWireOApp` instead of `WireOApp`
+- Use `--multi` flag for multi-chain operations
 - Or use `runSourceOnly` / `runDestinationOnly` functions
 - Wait for transactions to confirm between chains
+
+**"vm.envOr not unique"**
+- Use `--via-ir` flag for compilation
+- This is a known issue with some Foundry versions
+
+**"Stack too deep"**
+- Use `--via-ir` flag for compilation
+- This resolves stack depth issues in complex scripts
 
 For more help, see the [LayerZero Troubleshooting Guide](https://docs.layerzero.network/v2/developers/evm/troubleshooting/debugging-messages).
 

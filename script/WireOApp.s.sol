@@ -70,7 +70,7 @@ contract WireOApp is Script {
     mapping(string => mapping(string => address)) public dvnAddresses;
 
     // Storage for private key
-    uint256 private deployerPrivateKey;
+    uint256 internal deployerPrivateKey;
 
     // Storage for configured chain names
     string[] private configuredChainNames;
@@ -155,13 +155,18 @@ contract WireOApp is Script {
     /// @param configPath Path to JSON config file containing pathway configurations
     /// @param deploymentSource Optional: URL or path to LayerZero deployments (defaults to API)
     /// @param dvnSource Optional: URL or path to LayerZero DVN metadata (defaults to API)
-    function runWithSources(string memory configPath, string memory deploymentSource, string memory dvnSource) public {
+    function runWithSources(string memory configPath, string memory deploymentSource, string memory dvnSource) public virtual {
         // Get the private key from environment
         deployerPrivateKey = vm.envUint("PRIVATE_KEY");
         address signer = vm.addr(deployerPrivateKey);
 
         // Check if we're in check-only mode
-        bool checkOnly = vm.envOr("CHECK_ONLY", false);
+        bool checkOnly = false;
+        try vm.envBool("CHECK_ONLY") returns (bool check) {
+            checkOnly = check;
+        } catch {
+            // Use default
+        }
 
         // Print header
         printHeader("LAYERZERO WIRE SCRIPT");
@@ -243,12 +248,12 @@ contract WireOApp is Script {
     }
     
     /// @notice Convenience function with just config path (uses default APIs)
-    function run(string memory configPath) external {
+    function run(string memory configPath) external virtual {
         runWithSources(configPath, "", "");
     }
     
     /// @notice Legacy compatibility - supports the old 3-parameter signature
-    function run(string memory configPath, string memory deploymentSource, string memory dvnSource) external {
+    function run(string memory configPath, string memory deploymentSource, string memory dvnSource) external virtual {
         runWithSources(configPath, deploymentSource, dvnSource);
     }
 
@@ -263,7 +268,7 @@ contract WireOApp is Script {
     }
     
     /// @notice Convenience function for source only with just config path
-    function runSourceOnly(string memory configPath) external {
+    function runSourceOnly(string memory configPath) external virtual {
         runPartial(configPath, "", "", true, false);
     }
 
@@ -278,7 +283,7 @@ contract WireOApp is Script {
     }
     
     /// @notice Convenience function for destination only with just config path
-    function runDestinationOnly(string memory configPath) external {
+    function runDestinationOnly(string memory configPath) external virtual {
         runPartial(configPath, "", "", false, true);
     }
 
@@ -405,7 +410,7 @@ contract WireOApp is Script {
         PathwayConfig memory pathway,
         Deployment memory deployment,
         string memory rpcUrl
-    ) internal {
+    ) internal virtual {
         // Switch to source chain
         vm.createSelectFork(rpcUrl);
 
@@ -455,7 +460,7 @@ contract WireOApp is Script {
         PathwayConfig memory pathway,
         Deployment memory deployment,
         string memory rpcUrl
-    ) internal {
+    ) internal virtual {
         // Switch to destination chain
         vm.createSelectFork(rpcUrl);
 
@@ -887,7 +892,12 @@ contract WireOApp is Script {
         bool fullyConfigured = true;
 
         // Check verbosity - use VERBOSE env var
-        bool verbose = vm.envOr("VERBOSE", false);
+        bool verbose = false;
+        try vm.envBool("VERBOSE") returns (bool v) {
+            verbose = v;
+        } catch {
+            // Use default
+        }
 
         console.log(string.concat("\n  Checking: ", chainName(pathway.srcEid), " -> ", chainName(pathway.dstEid)));
 
@@ -1368,7 +1378,16 @@ contract WireOApp is Script {
     
     /// @notice Parse chain configurations from JSON
     function parseChainConfigs(string memory json) internal {
-        // Get all chain names
+        // Check for new format: deployment field
+        try vm.parseJsonString(json, ".deployment") returns (string memory deploymentPath) {
+            // New format: load deployment artifacts
+            parseChainConfigsFromDeployment(json, deploymentPath);
+            return;
+        } catch {
+            // Old format: proceed with legacy parsing
+        }
+        
+        // Get all chain names (old format)
         string[] memory chainNames = vm.parseJsonKeys(json, ".chains");
         
         // Store chain names for later use
@@ -1380,7 +1399,15 @@ contract WireOApp is Script {
             
             ChainConfig memory chainConfig;
             chainConfig.eid = uint32(vm.parseJsonUint(json, string.concat(chainPath, ".eid")));
-            chainConfig.rpc = vm.parseJsonString(json, string.concat(chainPath, ".rpc"));
+            
+            // Try to get RPC from config (backward compatibility)
+            try vm.parseJsonString(json, string.concat(chainPath, ".rpc")) returns (string memory rpc) {
+                chainConfig.rpc = rpc;
+            } catch {
+                // Will be loaded from environment variable
+                chainConfig.rpc = getRpcUrl(chain);
+            }
+            
             // signer field is now deprecated, but we still parse it for backward compatibility
             try vm.parseJsonAddress(json, string.concat(chainPath, ".signer")) returns (address signer) {
                 chainConfig.signer = signer;
@@ -1395,6 +1422,90 @@ contract WireOApp is Script {
             eidToRpc[chainConfig.eid] = chainConfig.rpc;
             // Don't store signer anymore - we'll use private key
         }
+    }
+    
+    /// @notice Parse chain configurations from deployment artifacts (new format)
+    function parseChainConfigsFromDeployment(string memory configJson, string memory deploymentPath) internal {
+        console.log(string.concat("  Loading deployment from: ", deploymentPath));
+        
+        // Read deployment artifact
+        string memory deploymentJson = vm.readFile(deploymentPath);
+        
+        // Get contract name and type for validation
+        string memory contractName = vm.parseJsonString(deploymentJson, ".contractName");
+        string memory contractType = vm.parseJsonString(deploymentJson, ".contractType");
+        console.log(string.concat("  Contract: ", contractName, " (", contractType, ")"));
+        
+        // Get all chain names from deployment
+        string[] memory chainNames = vm.parseJsonKeys(deploymentJson, ".chains");
+        
+        // Store chain names for later use
+        configuredChainNames = chainNames;
+        
+        for (uint256 i = 0; i < chainNames.length; i++) {
+            string memory chain = chainNames[i];
+            string memory chainPath = string.concat(".chains.", chain);
+            
+            ChainConfig memory chainConfig;
+            chainConfig.eid = uint32(vm.parseJsonUint(deploymentJson, string.concat(chainPath, ".eid")));
+            
+            // Get RPC from environment variable
+            chainConfig.rpc = getRpcUrl(chain);
+            
+            // Get OApp address from deployment
+            address oappAddress = vm.parseJsonAddress(deploymentJson, string.concat(chainPath, ".address"));
+            
+            // Check for override in config
+            try vm.parseJsonAddress(configJson, string.concat(".overrides.", chain)) returns (address overrideAddr) {
+                oappAddress = overrideAddr;
+                console.log(string.concat("  Override for ", chain, ": ", vm.toString(overrideAddr)));
+            } catch {
+                // No override for this chain
+            }
+            
+            chainConfig.oapp = oappAddress;
+            chainConfig.signer = address(0); // Will use private key
+            
+            // Store in mappings
+            chainConfigs[chain] = chainConfig;
+            eidToRpc[chainConfig.eid] = chainConfig.rpc;
+            
+            console.log(string.concat("  ", chain, " (", vm.toString(chainConfig.eid), "): ", vm.toString(oappAddress)));
+        }
+    }
+    
+    /// @notice Get RPC URL from environment variable
+    function getRpcUrl(string memory chain) internal view returns (string memory) {
+        // Convert chain name to uppercase for env var
+        string memory envVar = string.concat(toUpper(chain), "_RPC");
+        
+        // Get RPC from environment
+        string memory rpc = "";
+        try vm.envString(envVar) returns (string memory envRpc) {
+            rpc = envRpc;
+        } catch {
+            // Not found
+        }
+        require(bytes(rpc).length > 0, string.concat("RPC not found for chain: ", chain, ". Set ", envVar, " environment variable."));
+        
+        return rpc;
+    }
+    
+    /// @notice Convert string to uppercase
+    function toUpper(string memory str) internal pure returns (string memory) {
+        bytes memory strBytes = bytes(str);
+        bytes memory result = new bytes(strBytes.length);
+        
+        for (uint256 i = 0; i < strBytes.length; i++) {
+            if (strBytes[i] >= 0x61 && strBytes[i] <= 0x7A) {
+                // Convert lowercase to uppercase
+                result[i] = bytes1(uint8(strBytes[i]) - 32);
+            } else {
+                result[i] = strBytes[i];
+            }
+        }
+        
+        return string(result);
     }
     
     /// @notice Parse DVN metadata from LayerZero API JSON

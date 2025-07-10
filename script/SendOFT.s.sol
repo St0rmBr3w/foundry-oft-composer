@@ -10,12 +10,57 @@ import { OptionsBuilder } from "@layerzerolabs/oapp-evm/contracts/oapp/libs/Opti
 contract SendOFT is Script {
     using OptionsBuilder for bytes;
     
+    // Storage for deployment data
+    mapping(string => uint32) public chainEids;
+    mapping(string => address) public chainAddresses;
+    
     function addressToBytes32(address _addr) internal pure returns (bytes32) {
         return bytes32(uint256(uint160(_addr)));
     }
 
     /**
-     * @notice Send OFT tokens to another chain
+     * @notice Send OFT tokens to another chain using chain names
+     * @param deploymentPath Path to deployment JSON file
+     * @param fromChain Source chain name (e.g., "base", "arbitrum")
+     * @param toChain Destination chain name (e.g., "arbitrum", "base")
+     * @param to The recipient address (bytes32 format)
+     * @param amountLD The amount to send in smallest unit (wei)
+     * @param minAmountLD The minimum amount to receive in smallest unit (wei)
+     * @param extraOptions Additional message options (can be empty)
+     * @param composeMsg Compose message for the send operation (can be empty)
+     * @param oftCmd OFT command for the send operation (can be empty)
+     */
+    function sendWithChainNames(
+        string memory deploymentPath,
+        string memory fromChain,
+        string memory toChain,
+        bytes32 to,
+        uint256 amountLD,
+        uint256 minAmountLD,
+        bytes calldata extraOptions,
+        bytes calldata composeMsg,
+        bytes calldata oftCmd
+    ) external {
+        // Load deployment data
+        loadDeploymentData(deploymentPath);
+        
+        // Get addresses and EIDs
+        address oftAddress = chainAddresses[fromChain];
+        uint32 dstEid = chainEids[toChain];
+        
+        require(oftAddress != address(0), string.concat("OFT not found for chain: ", fromChain));
+        require(dstEid != 0, string.concat("EID not found for chain: ", toChain));
+        
+        console.log(string.concat("Sending from ", fromChain, " to ", toChain));
+        console.log("Source OFT address:", oftAddress);
+        console.log("Destination EID:", dstEid);
+        
+        // Call the original send function
+        send(oftAddress, dstEid, to, amountLD, minAmountLD, extraOptions, composeMsg, oftCmd);
+    }
+
+    /**
+     * @notice Send OFT tokens to another chain (original function)
      * @param oftAddress The address of the OFT contract
      * @param dstEid The destination endpoint ID
      * @param to The recipient address (bytes32 format)
@@ -34,7 +79,7 @@ contract SendOFT is Script {
         bytes calldata extraOptions,
         bytes calldata composeMsg,
         bytes calldata oftCmd
-    ) external {
+    ) public {
         // Get the private key and derive the signer address
         uint256 privateKey = vm.envUint("PRIVATE_KEY");
         address signer = vm.addr(privateKey);
@@ -76,5 +121,52 @@ contract SendOFT is Script {
         console.log("  Nonce:", receipt.nonce);
 
         vm.stopBroadcast();
+    }
+    
+    /**
+     * @notice Load deployment data from JSON file
+     * @param deploymentPath Path to deployment JSON file
+     */
+    function loadDeploymentData(string memory deploymentPath) internal {
+        string memory json = vm.readFile(deploymentPath);
+        
+        // Get all chain names
+        string[] memory chainNames = vm.parseJsonKeys(json, ".chains");
+        
+        for (uint256 i = 0; i < chainNames.length; i++) {
+            string memory chainName = chainNames[i];
+            string memory chainPath = string.concat(".chains.", chainName);
+            
+            // Get EID and address for each chain
+            uint32 eid = uint32(vm.parseJsonUint(json, string.concat(chainPath, ".eid")));
+            address oftAddress = vm.parseJsonAddress(json, string.concat(chainPath, ".address"));
+            
+            chainEids[chainName] = eid;
+            chainAddresses[chainName] = oftAddress;
+            
+            console.log(string.concat("Loaded ", chainName, ": EID=", vm.toString(eid), ", Address=", vm.toString(oftAddress)));
+        }
+    }
+    
+    /**
+     * @notice List available chains from deployment
+     * @param deploymentPath Path to deployment JSON file
+     */
+    function listChains(string memory deploymentPath) external view {
+        string memory json = vm.readFile(deploymentPath);
+        
+        // Get all chain names
+        string[] memory chainNames = vm.parseJsonKeys(json, ".chains");
+        
+        console.log("Available chains:");
+        for (uint256 i = 0; i < chainNames.length; i++) {
+            string memory chainName = chainNames[i];
+            string memory chainPath = string.concat(".chains.", chainName);
+            
+            uint32 eid = uint32(vm.parseJsonUint(json, string.concat(chainPath, ".eid")));
+            address oftAddress = vm.parseJsonAddress(json, string.concat(chainPath, ".address"));
+            
+            console.log(string.concat("  ", chainName, " (EID: ", vm.toString(eid), ") -> ", vm.toString(oftAddress)));
+        }
     }
 } 

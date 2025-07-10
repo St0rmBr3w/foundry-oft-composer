@@ -1,0 +1,86 @@
+{
+  "deployment": "deployments/mainnet/MyOFT.json",
+  
+  "deploymentsSource": "https://metadata.layerzero-api.com/v1/metadata/deployments",
+  "dvnsSource": "https://metadata.layerzero-api.com/v1/metadata/dvns",
+  
+  "overrides": {
+    "ethereum": "0x1234567890123456789012345678901234567890"
+  },
+  
+  "pathways": [
+    {
+      "from": "ethereum",
+      "to": "arbitrum",
+      "requiredDVNs": ["LayerZero Labs", "Google Cloud"],
+      "optionalDVNs": ["Nethermind", "Animoca Blockdaemon"],
+      "optionalDVNThreshold": 1,
+      "confirmations": [15, 10],
+      "maxMessageSize": 10000,
+      "enforcedOptions": [
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 250000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          },
+          {
+            "msgType": 2,
+            "lzReceiveGas": 0,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 500000,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ],
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 200000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 1000000000000000,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000001"
+          }
+        ]
+      ]
+    },
+    {
+      "from": "ethereum",
+      "to": "base",
+      "requiredDVNs": ["LayerZero Labs"],
+      "optionalDVNs": [],
+      "optionalDVNThreshold": 0,
+      "confirmations": [15],
+      "maxMessageSize": 10000,
+      "enforcedOptions": [
+        [
+          {
+            "msgType": 1,
+            "lzReceiveGas": 200000,
+            "lzReceiveValue": 0,
+            "lzComposeGas": 0,
+            "lzComposeIndex": 0,
+            "lzNativeDropAmount": 0,
+            "lzNativeDropRecipient": "0x0000000000000000000000000000000000000000"
+          }
+        ]
+      ]
+    }
+  ],
+  
+  "bidirectional": true,
+  
+  "dvns": {
+    "Custom DVN": {
+      "ethereum": "0xABCDEF1234567890ABCDEF1234567890ABCDEF12",
+      "arbitrum": "0x1234567890ABCDEF1234567890ABCDEF12345678"
+    }
+  }
+} 

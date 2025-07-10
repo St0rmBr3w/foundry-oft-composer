@@ -1,24 +1,9 @@
 {
-  "chains": {
-    "base": {
-      "eid": 30184,
-      "rpc": "https://base.gateway.tenderly.co",
-      "signer": "WILL_USE_PRIVATE_KEY",
-      "oapp": "0x603E5d61AC37f84f3601618763DF1E1647298436"
-    },
-    "arbitrum": {
-      "eid": 30110,
-      "rpc": "https://arbitrum.gateway.tenderly.co",
-      "signer": "WILL_USE_PRIVATE_KEY",
-      "oapp": "0x6b1C374105467d1fC1090C989BcbbCC172c8A89c"
-    },
-    "optimism": {
-      "eid": 30111,
-      "rpc": "https://optimism.gateway.tenderly.co",
-      "signer": "WILL_USE_PRIVATE_KEY",
-      "oapp": "0xCb903fD1Bc4725B5AF2D95D517CDe8C14ad171Fe"
-    }
-  },
+  "deployment": "deployments/mainnet/MyOFT.json",
+  
+  "deploymentsSource": "https://metadata.layerzero-api.com/v1/metadata/deployments",
+  "dvnsSource": "https://metadata.layerzero-api.com/v1/metadata/dvns",
+  
   "pathways": [
     {
       "from": "base",
@@ -129,7 +114,9 @@
       ]
     }
   ],
+  
   "bidirectional": true,
+  
   "dvns": {
     "My Custom DVN": {
       "base": "0x1111111111111111111111111111111111111111",
