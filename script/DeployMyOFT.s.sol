@@ -13,7 +13,7 @@ contract DeployMyOFT is Script {
         uint32 eid;
         string rpc;  // Will be loaded from environment variables
         address deployer;  // Deprecated - will use private key
-        address lzEndpoint;
+        address lzEndpoint;  // Will be fetched from deployments JSON
     }
     
     struct DeployConfig {
@@ -24,6 +24,9 @@ contract DeployMyOFT is Script {
     
     // Storage for deployments
     mapping(string => address) public deployedOFTs;
+    
+    // Storage for LayerZero endpoints
+    mapping(uint32 => address) public eidToEndpoint;
     
     /// @notice Main deployment function
     /// @param configPath Path to deployment configuration JSON
@@ -61,8 +64,281 @@ contract DeployMyOFT is Script {
         saveDeployments(config.chains);
     }
     
+    /// @notice Fetch JSON data from API or local file
+    /// @param source The source URL or file path
+    /// @return The JSON string data
+    function fetchJsonData(string memory source) internal returns (string memory) {
+        // Check if it's a URL (starts with http:// or https://)
+        bytes memory sourceBytes = bytes(source);
+        bool isUrl = false;
+        
+        if (sourceBytes.length >= 7) {
+            // Check for "http://" or "https://"
+            if ((sourceBytes[0] == 'h' && sourceBytes[1] == 't' && sourceBytes[2] == 't' && sourceBytes[3] == 'p') &&
+                ((sourceBytes[4] == ':' && sourceBytes[5] == '/' && sourceBytes[6] == '/') ||
+                 (sourceBytes[4] == 's' && sourceBytes[5] == ':' && sourceBytes[6] == '/' && sourceBytes[7] == '/'))) {
+                isUrl = true;
+            }
+        }
+        
+        if (isUrl) {
+            console.log(string.concat("  Fetching from API: ", source));
+            
+            // Use curl to fetch data
+            string[] memory curlCommand = new string[](7);
+            curlCommand[0] = "curl";
+            curlCommand[1] = "-s"; // Silent mode
+            curlCommand[2] = "-X";
+            curlCommand[3] = "GET";
+            curlCommand[4] = source;
+            curlCommand[5] = "-H";
+            curlCommand[6] = "accept: application/json";
+            
+            try vm.ffi(curlCommand) returns (bytes memory result) {
+                return string(result);
+            } catch {
+                revert(string.concat("Failed to fetch data from API: ", source));
+            }
+        } else {
+            console.log(string.concat("  Reading from file: ", source));
+            return vm.readFile(source);
+        }
+    }
+    
+
+    
+    /// @notice Extract base EID from full EID (remove 30xxx or 40xxx prefix)
+    function extractBaseEid(string memory fullEid) internal pure returns (string memory) {
+        bytes memory eidBytes = bytes(fullEid);
+        if (eidBytes.length >= 5) {
+            // Return everything after the first 2 digits
+            bytes memory baseBytes = new bytes(eidBytes.length - 2);
+            for (uint256 i = 2; i < eidBytes.length; i++) {
+                baseBytes[i - 2] = eidBytes[i];
+            }
+            return string(baseBytes);
+        }
+        return fullEid;
+    }
+    
+    /// @notice Determine if we should check this chain based on name patterns
+    function shouldCheckChain(string memory chainKey, bool isMainnet, string memory baseEid) internal pure returns (bool) {
+        // Skip testnet chains if we're looking for mainnet EID
+        if (isMainnet && containsTestnet(chainKey)) {
+            return false;
+        }
+        
+        // Skip mainnet chains if we're looking for testnet EID
+        if (!isMainnet && !containsTestnet(chainKey)) {
+            return false;
+        }
+        
+        // Skip sandbox chains (they have different EID patterns)
+        if (containsSandbox(chainKey)) {
+            return false;
+        }
+        
+        // Skip chains that are clearly not relevant (like non-EVM chains)
+        if (isNonEVMChain(chainKey)) {
+            return false;
+        }
+        
+        return true;
+    }
+    
+    /// @notice Check if chain name contains "sandbox"
+    function containsSandbox(string memory chainName) internal pure returns (bool) {
+        bytes memory nameBytes = bytes(chainName);
+        bytes memory sandboxBytes = bytes("sandbox");
+        
+        for (uint256 i = 0; i <= nameBytes.length - sandboxBytes.length; i++) {
+            bool found = true;
+            for (uint256 j = 0; j < sandboxBytes.length; j++) {
+                if (nameBytes[i + j] != sandboxBytes[j]) {
+                    found = false;
+                    break;
+                }
+            }
+            if (found) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /// @notice Check if chain is non-EVM (can be extended with more patterns)
+    function isNonEVMChain(string memory chainName) internal pure returns (bool) {
+        // Add patterns for non-EVM chains that we want to skip
+        // This can be extended based on the actual chain names in the JSON
+        bytes memory nameBytes = bytes(chainName);
+        
+        // Skip chains that are clearly not EVM (this is a starting point)
+        // We can add more patterns as needed
+        return false; // For now, check all chains
+    }
+    
+    /// @notice Check if EID is mainnet (starts with 30xxx)
+    function isMainnetEid(string memory eid) internal pure returns (bool) {
+        bytes memory eidBytes = bytes(eid);
+        if (eidBytes.length >= 5) {
+            // Check if it starts with "30"
+            return eidBytes[0] == '3' && eidBytes[1] == '0';
+        }
+        return false;
+    }
+    
+    /// @notice Check if EID is valid for v2 (at least 5 characters)
+    function isValidV2Eid(string memory eid) internal pure returns (bool) {
+        return bytes(eid).length >= 5;
+    }
+    
+    /// @notice Check if chain name contains "testnet"
+    function containsTestnet(string memory chainName) internal pure returns (bool) {
+        bytes memory nameBytes = bytes(chainName);
+        bytes memory testnetBytes = bytes("testnet");
+        
+        // Simple substring check for "testnet"
+        for (uint256 i = 0; i <= nameBytes.length - testnetBytes.length; i++) {
+            bool found = true;
+            for (uint256 j = 0; j < testnetBytes.length; j++) {
+                if (nameBytes[i + j] != testnetBytes[j]) {
+                    found = false;
+                    break;
+                }
+            }
+            if (found) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /// @notice Search a specific chain for an EID (optimized for 2 deployments)
+    function searchChainForEid(string memory json, string memory chainKey, string memory targetEid) internal view returns (address) {
+        string memory chainPath = string.concat(".", chainKey, ".deployments");
+        
+        // Since we know there are typically only 2 deployments, check them directly
+        // First check deployment[1] (likely version 2) - most efficient path
+        try vm.parseJsonString(json, string.concat(chainPath, "[1].eid")) returns (string memory eidStr) {
+            // Check if this is our target EID
+            if (keccak256(bytes(eidStr)) == keccak256(bytes(targetEid))) {
+                // Check if it's version 2
+                try vm.parseJsonUint(json, string.concat(chainPath, "[1].version")) returns (uint256 version) {
+                    if (version == 2) {
+                        // Get the endpointV2 address
+                        try vm.parseJsonAddress(json, string.concat(chainPath, "[1].endpointV2.address")) returns (address endpoint) {
+                            return endpoint;
+                        } catch {
+                            // No endpointV2 found
+                            return address(0);
+                        }
+                    }
+                } catch {
+                    // No version field
+                    return address(0);
+                }
+            }
+        } catch {
+            // No deployment[1], try deployment[0]
+        }
+        
+        // Fallback to deployment[0] if deployment[1] didn't work
+        try vm.parseJsonString(json, string.concat(chainPath, "[0].eid")) returns (string memory eidStr) {
+            // Check if this is our target EID
+            if (keccak256(bytes(eidStr)) == keccak256(bytes(targetEid))) {
+                // Check if it's version 2
+                try vm.parseJsonUint(json, string.concat(chainPath, "[0].version")) returns (uint256 version) {
+                    if (version == 2) {
+                        // Get the endpointV2 address
+                        try vm.parseJsonAddress(json, string.concat(chainPath, "[0].endpointV2.address")) returns (address endpoint) {
+                            return endpoint;
+                        } catch {
+                            // No endpointV2 found
+                            return address(0);
+                        }
+                    }
+                } catch {
+                    // No version field
+                    return address(0);
+                }
+            }
+        } catch {
+            // No deployments in this chain
+            return address(0);
+        }
+        
+        return address(0);
+    }
+    
+
+    
+
+    
+
+    
+    /// @notice Convert uint32 array to string for logging
+    function arrayToString(uint32[] memory arr) internal pure returns (string memory) {
+        if (arr.length == 0) return "[]";
+        
+        string memory result = "[";
+        for (uint256 i = 0; i < arr.length; i++) {
+            result = string.concat(result, vm.toString(arr[i]));
+            if (i < arr.length - 1) {
+                result = string.concat(result, ", ");
+            }
+        }
+        result = string.concat(result, "]");
+        return result;
+    }
+    
+    /// @notice Get the EIDs we need from our config
+    function getNeededEids() internal view returns (uint32[] memory) {
+        // Read config to get EIDs
+        string memory configJson = vm.readFile("utils/deploy.config.json");
+        
+        // Count the number of chains
+        uint256 numChains = 0;
+        while (true) {
+            try vm.parseJsonString(configJson, string.concat(".chains[", vm.toString(numChains), "].name")) returns (string memory) {
+                numChains++;
+            } catch {
+                break;
+            }
+        }
+        
+        uint32[] memory eids = new uint32[](numChains);
+        
+        for (uint256 i = 0; i < numChains; i++) {
+            string memory basePath = string.concat(".chains[", vm.toString(i), "]");
+            eids[i] = uint32(vm.parseJsonUint(configJson, string.concat(basePath, ".eid")));
+        }
+        
+        return eids;
+    }
+    
+    /// @notice Check if an EID is in our needed list
+    function isEidNeeded(uint32 eid, uint32[] memory neededEids) internal pure returns (bool) {
+        for (uint256 i = 0; i < neededEids.length; i++) {
+            if (neededEids[i] == eid) {
+                return true;
+            }
+        }
+        return false;
+    }
+    
+    /// @notice Verify we found all needed EIDs
+    function verifyAllEidsFound(uint32[] memory neededEids) internal view {
+        for (uint256 i = 0; i < neededEids.length; i++) {
+            uint32 eid = neededEids[i];
+            if (eidToEndpoint[eid] == address(0)) {
+                revert(string.concat("LayerZero endpoint not found for EID: ", vm.toString(eid)));
+            }
+        }
+        console.log(string.concat("Successfully loaded endpoints for all ", vm.toString(neededEids.length), " EIDs"));
+    }
+    
     /// @notice Parse the deployment configuration from JSON
-    function parseConfig(string memory json) internal pure returns (DeployConfig memory) {
+    function parseConfig(string memory json) internal view returns (DeployConfig memory) {
         DeployConfig memory config;
         
         // Parse token details
@@ -104,7 +380,13 @@ contract DeployMyOFT is Script {
                 config.chains[i].deployer = address(0);
             }
             
-            config.chains[i].lzEndpoint = vm.parseJsonAddress(json, string.concat(basePath, ".lzEndpoint"));
+            // Require lzEndpoint provided directly in config
+            try vm.parseJsonAddress(json, string.concat(basePath, ".lzEndpoint")) returns (address endpoint) {
+                require(endpoint != address(0), "Invalid lzEndpoint address in config");
+                config.chains[i].lzEndpoint = endpoint;
+            } catch {
+                revert(string.concat("lzEndpoint address missing for chain: ", config.chains[i].name));
+            }
         }
         
         return config;
@@ -183,9 +465,16 @@ contract DeployMyOFT is Script {
         
         deployments = string.concat(deployments, "}");
         
-        // Write to file (old format) - this is safe outside broadcast context
-        vm.writeJson(deployments, "./deployments/myoft-deployments.json");
-        console.log("\nDeployments saved to deployments/myoft-deployments.json");
+        // Ensure deployments directory exists
+        string[] memory mk = new string[](3);
+        mk[0] = "mkdir";
+        mk[1] = "-p";
+        mk[2] = "deployments";
+        vm.ffi(mk);
+        
+        // Write to file
+        vm.writeJson(deployments, "./deployments/MyOFT.json");
+        console.log("\nDeployments saved to deployments/MyOFT.json");
         
         // Also save in new standardized format
         saveStandardizedDeployment(chains);
@@ -229,6 +518,11 @@ contract DeployMyOFT is Script {
         
         // Create directory if it doesn't exist
         string memory dirPath = string.concat("deployments/", environment);
+        string[] memory mk2 = new string[](3);
+        mk2[0] = "mkdir";
+        mk2[1] = "-p";
+        mk2[2] = dirPath;
+        vm.ffi(mk2);
         
         // Save to standardized location
         string memory filePath = string.concat(dirPath, "/", contractName, ".json");

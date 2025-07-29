@@ -1,5 +1,7 @@
 # LayerZero OApp Wire Script
 
+> **Scope:** legacy (non-batched) wiring via `WireOApp.s.sol`. Quick-start, deployment, and batched wiring live in the root [`README.md`](../README.md).
+
 This script automates the process of wiring LayerZero OApp pathways using human-readable configuration files.
 
 ## Features

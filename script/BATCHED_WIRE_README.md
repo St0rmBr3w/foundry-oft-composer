@@ -1,5 +1,7 @@
 # Batched Wire OApp Script
 
+> **Scope:** detailed usage & internals of `BatchedWireOApp.s.sol` only. For installation, deployment, and sending tokens see the root [`README.md`](../README.md).
+
 This script solves nonce mismatch issues when using Foundry's `--multi` flag with cross-chain configurations.
 
 ## How It Works
