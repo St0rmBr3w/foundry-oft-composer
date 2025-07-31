@@ -1,0 +1,17 @@
+{
+  "base": {
+    "oft": "0x6eae4b955517a8281C069F82b350b13bE568B1f8",
+    "eid": 30184,
+    "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
+  },
+  "arbitrum": {
+    "oft": "0x01dE03cEA06b4cD331Ca7e3B5D2445bD7256E0e6",
+    "eid": 30110,
+    "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
+  },
+  "optimism": {
+    "oft": "0x82a919D7Aa368713caB2E65994a078FCA2b55831",
+    "eid": 30111,
+    "lzEndpoint": "0x1a44076050125825900e736c501f859c50fE728c"
+  }
+}

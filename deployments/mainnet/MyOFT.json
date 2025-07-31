@@ -1,0 +1,26 @@
+{
+  "contractName": "MyOFT",
+  "contractType": "OFT",
+  "timestamp": "1753830511",
+  "environment": "mainnet",
+  "chains": {
+    "base": {
+      "eid": 30184,
+      "address": "0x6eae4b955517a8281C069F82b350b13bE568B1f8",
+      "blockNumber": 139115867,
+      "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "arbitrum": {
+      "eid": 30110,
+      "address": "0x01dE03cEA06b4cD331Ca7e3B5D2445bD7256E0e6",
+      "blockNumber": 139115867,
+      "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    "optimism": {
+      "eid": 30111,
+      "address": "0x82a919D7Aa368713caB2E65994a078FCA2b55831",
+      "blockNumber": 139115867,
+      "transactionHash": "0x0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  }
+}
